@@ -153,7 +153,9 @@ export default function GeneratorView() {
                     <Chip onClick={() => setDetail(row)}>details</Chip>
                   </>
                 ) : row.state.kind === "error" ? (
-                  <span className="text-[12px] text-accent-red">{row.state.message}</span>
+                  <span className="rounded-lg border border-accent-red/30 bg-accent-red/5 px-2.5 py-1.5 text-[12px] text-accent-red">
+                    {row.state.message}
+                  </span>
                 ) : (
                   <IconButton
                     icon={<Sparkles />}
