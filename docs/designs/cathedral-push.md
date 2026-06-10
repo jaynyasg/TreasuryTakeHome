@@ -129,6 +129,20 @@ a reason.
 take-home and depth-on-AC-1 is higher signal. Decision: cathedral stands; the drop order
 below is the focus mechanism if time pressure materializes.
 
+## Eng-review amendments (/plan-eng-review, user-approved)
+- **1A (AC-3 seam fix):** `lib/client.ts` throws a typed `VerifyError extends Error { retryable: boolean }`;
+  the 2-retry-with-jitter loop lives INSIDE `verifyCase` (single and batch paths both heal).
+  Rationale: the current seam (`throw new Error(err.data.error)`) erases the retryable flag,
+  and `GeneratorView.verifyOne` never throws — retry at the batch layer could never fire.
+- **2A (new T12):** `lib/fixtures.ts` single source of truth for the real COLA sample
+  applications (OTIUM/8 Chains/Santa Fe) — currently hand-copied in VerifyView, prove.ts,
+  smoke-api.ts, golden.json; a unit test asserts golden.json matches the module.
+- **3A (AC-5):** RFC-4180 CSV escaping (`escapeCsvField`: quote fields containing
+  comma/quote/newline, double inner quotes) + formula-neutering (prefix `=+-@`-leading
+  cells) + unit test using a real close-match reason string.
+- **4A (AC-3):** batch rows render via a memoized `CaseRow` component (`React.memo`,
+  per-row reference updates) so 300-case runs don't re-render the whole list per completion.
+
 ## Drop order under time pressure
 Capability core, in order: **AC-1 → AC-3 → AC-2** (imperfect images claims the PRD
 stretch goal; scale batch proves the queue story; COLA prefill is wow-but-droppable).
@@ -152,3 +166,22 @@ split by environment (AC-1/AC-4), .gov risk contained via fixture + cached demo
 operationalized terms (AC-1..7), 429 retry (AC-3), and a real deferral list.
 User explicitly retained item 2 (their call under EXPANSION mode) with the
 fixture-first risk design.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR | 7 proposals, 7 accepted, 0 deferred |
+| Codex Review | `/codex review` | Independent 2nd opinion | 1 | absorbed | 15 findings → 6 amendments + 1 tension (KEEP) |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 4 issues, 0 critical gaps — all resolved (1A,2A,3A,4A) |
+| Design Review | `/design-review` | UI/UX gaps | 2 | CLEAR (live) | 8 findings fixed pre-plan; B→A- |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+
+**CROSS-MODEL:** Codex (GPT-5.5) challenged scope breadth and eval rigor in the CEO
+round; its 6 adopted tightenings are encoded above. The eng review's 4 findings are
+seam-level (retryable erasure, fixture DRY, CSV escaping, row memoization) — below
+the altitude the outside voice reviews at; no contradiction.
+
+**VERDICT:** CEO + ENG CLEARED — ready to implement (T1–T12, drop order AC-1 → AC-3 → AC-2).
+
+NO UNRESOLVED DECISIONS
