@@ -20,13 +20,18 @@ Click **Load real example** on the Verify tab to prefill a real approved COLA
 
 ## What it does
 
-- **Verify a label** — enter the application fields, upload up to 4 images of one
-  container (front/back/neck), get a match report in ~5 seconds: overall %, per-field
+- **Verify a label** — enter the application fields (or **prefill from the public COLA
+  registry by TTB ID**, labeled live/cached), then upload, drop, or **paste** up to 4
+  images of one container. Match report in ~5 seconds: overall %, per-field
   match/mismatch/missing/needs-review, and a plain-English reason for each.
+  A "Try a bad photo" chip demos honest needs-review on a perspective-skewed scan.
 - **Generate test cases** — seeded mock application+label pairs, clean or with injected
   defects (wrong ABV, missing warning, title-case "Government Warning:", swapped brand…).
   Generated labels are rendered to images and verified through the **same vision
-  pipeline** as uploads — nothing is faked. Batch-verify a whole grid at once.
+  pipeline** as uploaded photos. Batch at **3–300 cases** (300 confirm-gated with cost
+  and wall-clock computed from measured usage), optionally **mixed with the real COLA
+  label sets and degraded photos**, with progress, cancellation, per-case PNG download,
+  and an **escaped CSV export** carrying every verdict's reason.
 
 ## How it works
 
@@ -56,9 +61,9 @@ application ──────────────────────�
 
 | Check | Command | What it proves |
 |---|---|---|
-| Unit tests (38) | `npm test` | Warning rules, normalizers, scoring, generator, batch isolation |
-| Offline eval | `npm run eval` | 11 golden cases (3 real COLAs + 8 generated) replayed from recorded extractions — deterministic, free |
-| Live eval | `npm run eval:live` | Re-extracts all 11 cases with GPT-4o and re-grades (costs credits) |
+| Unit tests (65+) | `npm test` | Warning rules, normalizers, scoring, generator, batch isolation, retry seam, COLA parser, CSV escaping, fixture sync |
+| Offline eval | `npm run eval` | 17 golden cases (3 real COLAs + 6 degraded photos + 8 generated) replayed from recorded extractions — deterministic, free |
+| Live eval | `npm run eval:live` | Re-extracts all cases with GPT-4o and re-grades (costs credits); `-- --only <prefix>` scopes the spend |
 | Full gate | `npm run verify` | typecheck + lint + unit + offline eval |
 | API smoke | `npx tsx scripts/smoke-api.ts` | Happy path + error states against a running server |
 
@@ -80,7 +85,7 @@ review rather than silently passed.
 | Exact warning, all-caps heading (R7, Jenny) | ✅ word-for-word; title case rejected |
 | Standalone, no COLA integration (R8) | ✅ |
 | No sensitive storage (R9) | ✅ nothing persisted server-side |
-| Imperfect images (R11, stretch) | ◐ extractor reports `readability`; uncertain regions become needs_review instead of false mismatches |
+| Imperfect images (R11, stretch) | ✅ proven by eval: 6 degraded cases (blur/glare/rotation/perspective/shadow/phone-photo) must never be confidently wrong AND still extract ≥4/6 core fields |
 
 ## Assumptions & trade-offs
 
@@ -96,6 +101,17 @@ review rather than silently passed.
   queue, stream progress, dedupe identical label sets. Deliberately not built for a
   prototype.
 - **No database**: applications are entered/generated per session; nothing is retained.
+
+## What is prototype-shaped (honesty disclosure)
+
+Deliberately not production: batch runs fan out **client-side** (a tab close abandons
+the queue — a guard warns first), nothing is persisted, there is no durable audit trail,
+and the COLA registry lookup falls back to a committed fixture (labeled "cached") when
+ttbonline.gov is slow or blocking. The production shape — server-side queue, storage,
+job recovery — is specced in [TODOS.md](TODOS.md) and `docs/designs/cathedral-push.md`.
+
+**Pre-submission step:** run `npm run eval:live` once so the degraded-image proof
+reflects current model behavior, not just replayed snapshots.
 
 ## Deployment
 

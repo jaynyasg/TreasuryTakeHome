@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Card from "@/components/house/Card";
 import IconButton from "@/components/house/IconButton";
 import Chip from "@/components/house/Chip";
@@ -72,12 +72,13 @@ export default function VerifyView() {
     }
   };
 
-  const addFiles = async (files: FileList | null) => {
+  const addFiles = async (files: FileList | File[] | null) => {
     if (!files) return;
     setError(null);
     try {
       const added = await Promise.all(
         Array.from(files)
+          .filter((f) => f.type.startsWith("image/"))
           .slice(0, 4 - images.length)
           .map(async (f) => ({ name: f.name, dataUrl: await fileToDataUrl(f) }))
       );
@@ -86,6 +87,23 @@ export default function VerifyView() {
       setError(err instanceof Error ? err.message : "Could not read the image file.");
     }
   };
+
+  // AC-6: Ctrl+V a screenshot straight onto the Verify tab.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageFiles = items
+        .filter((i) => i.type.startsWith("image/"))
+        .map((i) => i.getAsFile())
+        .filter((f): f is File => f !== null);
+      if (imageFiles.length === 0) return;
+      e.preventDefault();
+      void addFiles(imageFiles);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images.length]);
 
   const loadSample = async (imageUrls: string[]) => {
     setError(null);
@@ -208,7 +226,7 @@ export default function VerifyView() {
             }}
           >
             <ImageIcon />
-            <span className="text-[13px] font-medium">Click or drop label images</span>
+            <span className="text-[13px] font-medium">Click, drop, or paste label images</span>
           </button>
           {images.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-3">

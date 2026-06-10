@@ -3,6 +3,7 @@
 import { useState } from "react";
 import VerifyView from "@/components/VerifyView";
 import GeneratorView from "@/components/GeneratorView";
+import HowItWorks from "@/components/HowItWorks";
 
 type Tab = "verify" | "generate";
 
@@ -52,9 +53,12 @@ export default function Home() {
         {tab === "verify" ? <VerifyView /> : <GeneratorView />}
       </main>
 
-      <footer className="mx-auto max-w-6xl px-5 pb-8 text-[11px] text-muted-2">
-        Prototype — no data is stored. Verification is advisory; final determinations rest
-        with the reviewing agent.
+      <footer className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-8 text-[11px] text-muted-2">
+        <span>
+          Prototype — no data is stored. Verification is advisory; final determinations rest
+          with the reviewing agent.
+        </span>
+        <HowItWorks />
       </footer>
     </div>
   );
