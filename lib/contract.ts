@@ -126,6 +126,16 @@ export const StageEvent = z.object({
 });
 export type StageEvent = z.infer<typeof StageEvent>;
 
+/** API: GET /api/cola/[ttbid] success — registry prefill. */
+export const ColaPrefillResponse = z.object({
+  ok: z.literal(true),
+  ttbid: z.string(),
+  /** "live" = fetched from ttbonline.gov just now; "cached" = committed fixture fallback. */
+  source: z.enum(["live", "cached"]),
+  application: ColaApplication,
+});
+export type ColaPrefillResponse = z.infer<typeof ColaPrefillResponse>;
+
 /** A generated mock application + matching (or deliberately flawed) label spec. */
 export const GeneratedCase = z.object({
   application: ColaApplication,

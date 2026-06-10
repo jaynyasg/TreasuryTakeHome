@@ -3,9 +3,23 @@
 import {
   ApiError,
   ColaApplication,
+  ColaPrefillResponse,
   StageEvent,
   VerifyResponse,
 } from "@/lib/contract";
+
+/** Fetch a COLA application from the public registry (live, or cached fixture). */
+export async function fetchColaPrefill(ttbid: string): Promise<ColaPrefillResponse> {
+  const res = await fetch(`/api/cola/${encodeURIComponent(ttbid)}`);
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = ApiError.safeParse(json);
+    throw new Error(err.success ? err.data.error : `Registry lookup failed (${res.status})`);
+  }
+  const parsed = ColaPrefillResponse.safeParse(json);
+  if (!parsed.success) throw new Error("Server response violated the contract.");
+  return parsed.data;
+}
 
 export type VerifyStage = StageEvent["stage"];
 

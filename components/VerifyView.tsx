@@ -8,9 +8,10 @@ import Stepper from "@/components/house/Stepper";
 import { Sparkles, Image as ImageIcon, X as XIcon, Bolt } from "@/components/house/icons";
 import ApplicationForm from "@/components/ApplicationForm";
 import ResultPanel from "@/components/ResultPanel";
+import Badge from "@/components/house/Badge";
 import { ColaApplication, VerifyResponse } from "@/lib/contract";
-import { OTIUM_APPLICATION } from "@/lib/fixtures";
-import { fileToDataUrl, verifyCase } from "@/lib/client";
+import { OTIUM_APPLICATION, OTIUM_TTB_ID } from "@/lib/fixtures";
+import { fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
 
 /** Steps mirror the real pipeline; advancement is driven by server stage events. */
 const VERIFY_STEPS = [
@@ -50,7 +51,26 @@ export default function VerifyView() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VerifyResponse | null>(null);
+  const [ttbId, setTtbId] = useState("");
+  const [colaBusy, setColaBusy] = useState(false);
+  const [colaSource, setColaSource] = useState<"live" | "cached" | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const prefillFromRegistry = async (id: string) => {
+    setColaBusy(true);
+    setColaSource(null);
+    setError(null);
+    try {
+      const prefill = await fetchColaPrefill(id.trim());
+      setApplication(prefill.application);
+      setColaSource(prefill.source);
+      setTtbId(prefill.ttbid);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Registry lookup failed.");
+    } finally {
+      setColaBusy(false);
+    }
+  };
 
   const addFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -127,6 +147,35 @@ export default function VerifyView() {
                 Try a bad photo
               </Chip>
             </div>
+          </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-line-2 bg-surface/50 px-3 py-2.5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Prefill from registry
+            </span>
+            <input
+              className="h-8 w-40 rounded-lg border border-line bg-card px-2.5 font-mono text-[12px] text-ink placeholder:text-muted-2 focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/20"
+              placeholder="14-digit TTB ID"
+              value={ttbId}
+              maxLength={14}
+              onChange={(e) => setTtbId(e.target.value.replace(/\D/g, ""))}
+            />
+            <Chip disabled={colaBusy || ttbId.length !== 14} onClick={() => void prefillFromRegistry(ttbId)}>
+              {colaBusy ? "Fetching…" : "Fetch"}
+            </Chip>
+            <Chip disabled={colaBusy} onClick={() => void prefillFromRegistry(OTIUM_TTB_ID)}>
+              Demo TTB ID
+            </Chip>
+            {colaSource && (
+              <Badge
+                className={
+                  colaSource === "live"
+                    ? "border-accent-green/40 bg-accent-green/10 text-accent-green"
+                    : "border-accent-amber/50 bg-accent-amber/10 text-ink-2"
+                }
+              >
+                {colaSource === "live" ? "live registry data" : "cached fixture"}
+              </Badge>
+            )}
           </div>
           <ApplicationForm value={application} onChange={setApplication} />
         </Card>
