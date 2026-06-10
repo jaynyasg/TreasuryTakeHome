@@ -139,7 +139,7 @@ export default function VerifyView() {
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface/60 py-8 text-muted transition hover:border-accent/50 hover:text-ink-2"
+            className="flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface/60 py-8 text-muted transition hover:border-accent/50 hover:text-ink-2 focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -163,7 +163,7 @@ export default function VerifyView() {
                     type="button"
                     aria-label={`Remove ${img.name}`}
                     onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-                    className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-ink text-white shadow-pop group-hover:flex"
+                    className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white opacity-0 shadow-pop transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/25 group-hover:opacity-100"
                   >
                     <XIcon />
                   </button>
