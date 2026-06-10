@@ -16,8 +16,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      <header className="dot-grid border-b border-line bg-card/60">
-        <div className="mx-auto max-w-6xl px-5 pb-5 pt-8">
+      <header className="relative overflow-hidden border-b border-line bg-card/60">
+        <div aria-hidden className="dot-grid absolute inset-0" />
+        <div className="relative mx-auto max-w-6xl px-5 pb-5 pt-8">
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
             TTB · Label Compliance Prototype
           </div>
