@@ -9,6 +9,7 @@ import { Sparkles, Image as ImageIcon, X as XIcon, Bolt } from "@/components/hou
 import ApplicationForm from "@/components/ApplicationForm";
 import ResultPanel from "@/components/ResultPanel";
 import { ColaApplication, VerifyResponse } from "@/lib/contract";
+import { OTIUM_APPLICATION } from "@/lib/fixtures";
 import { fileToDataUrl, verifyCase } from "@/lib/client";
 
 /** Steps mirror the real pipeline; advancement is driven by server stage events. */
@@ -29,20 +30,7 @@ const EMPTY_APPLICATION: ColaApplication = {
   applicantNameAddress: "",
 };
 
-/** Transcribed from LabelExample1.pdf (TTB ID 10200001000187) — a real approved COLA. */
-const SAMPLE_APPLICATION: ColaApplication = {
-  serialNumber: "100002",
-  beverageType: "wine",
-  sourceOfProduct: "domestic",
-  brandName: "OTIUM CELLARS",
-  classType: "Pinot Gris",
-  alcoholContent: "12",
-  netContents: "750 MILLILITERS",
-  applicantNameAddress:
-    "EIGHT CHAINS NORTH, FURNACE MOUNTAIN VINEYARDS LLC, 38593 DAYMONT LN, WATERFORD VA 20197, OTIUM CELLARS",
-  wineAppellation: "LOUDOUN COUNTY VIRGINIA",
-  wineVintage: "2009",
-};
+const SAMPLE_APPLICATION = OTIUM_APPLICATION;
 const SAMPLE_IMAGES = ["/samples/otium-front.jpg", "/samples/otium-back.jpg"];
 
 interface LabelImage {

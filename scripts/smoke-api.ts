@@ -4,23 +4,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { VerifyResponse, ApiError, ColaApplication } from "../lib/contract";
+import { VerifyResponse, ApiError } from "../lib/contract";
+import { OTIUM_APPLICATION as application } from "../lib/fixtures";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
-
-const application: ColaApplication = {
-  serialNumber: "100002",
-  beverageType: "wine",
-  sourceOfProduct: "domestic",
-  brandName: "OTIUM CELLARS",
-  classType: "Pinot Gris",
-  alcoholContent: "12",
-  netContents: "750 MILLILITERS",
-  applicantNameAddress:
-    "EIGHT CHAINS NORTH, FURNACE MOUNTAIN VINEYARDS LLC, 38593 DAYMONT LN, WATERFORD VA 20197, OTIUM CELLARS",
-  wineAppellation: "LOUDOUN COUNTY VIRGINIA",
-  wineVintage: "2009",
-};
 
 function img(name: string): string {
   const buf = fs.readFileSync(path.join(__dirname, "..", "eval", "images", name));

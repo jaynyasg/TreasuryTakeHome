@@ -6,27 +6,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { extractLabel } from "../lib/extract";
 import { buildMatchReport } from "../lib/engine/score";
-import { ColaApplication } from "../lib/contract";
+import { OTIUM_APPLICATION as application } from "../lib/fixtures";
 
 function dataUrl(file: string): string {
   const buf = fs.readFileSync(file);
   return `data:image/jpeg;base64,${buf.toString("base64")}`;
 }
-
-// Transcribed from LabelExample1.pdf (TTB ID 10200001000187).
-const application: ColaApplication = {
-  serialNumber: "100002",
-  beverageType: "wine",
-  sourceOfProduct: "domestic",
-  brandName: "OTIUM CELLARS",
-  classType: "Pinot Gris",
-  alcoholContent: "12",
-  netContents: "750 MILLILITERS",
-  applicantNameAddress:
-    "EIGHT CHAINS NORTH, FURNACE MOUNTAIN VINEYARDS LLC, 38593 DAYMONT LN, WATERFORD VA 20197, OTIUM CELLARS",
-  wineAppellation: "LOUDOUN COUNTY VIRGINIA",
-  wineVintage: "2009",
-};
 
 async function main(): Promise<void> {
   const dir = path.join(__dirname, "..", "eval", "images");
