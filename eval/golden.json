@@ -71,6 +71,14 @@
       }
     }
   ],
+  "degradedCases": [
+    { "id": "degraded_blur_otium", "baseId": "real-otium", "images": ["degraded/blur-otium-front.jpg", "degraded/blur-otium-back.jpg"], "allowedFlagged": [] },
+    { "id": "degraded_glare_santa_fe", "baseId": "real-santa-fe", "images": ["degraded/glare-santa-fe.jpg"], "allowedFlagged": [] },
+    { "id": "degraded_rotation_eight_chains", "baseId": "real-eight-chains", "images": ["degraded/rotation-eight-chains.jpg"], "allowedFlagged": ["classType", "fancifulName"] },
+    { "id": "degraded_perspective_otium", "baseId": "real-otium", "images": ["degraded/perspective-otium-front.jpg", "degraded/perspective-otium-back.jpg"], "allowedFlagged": [] },
+    { "id": "degraded_shadow_santa_fe", "baseId": "real-santa-fe", "images": ["degraded/shadow-santa-fe.jpg"], "allowedFlagged": [] },
+    { "id": "degraded_phone_eight_chains", "baseId": "real-eight-chains", "images": ["degraded/phone-eight-chains.jpg"], "allowedFlagged": ["classType", "fancifulName"] }
+  ],
   "generatedSeeds": [
     { "seed": 101, "defects": 0 },
     { "seed": 102, "defects": 0 },

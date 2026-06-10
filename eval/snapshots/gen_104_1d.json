@@ -1,7 +1,7 @@
 {
   "brandName": "BLUE HERON ALES",
-  "fancifulName": null,
-  "classType": "Hefeweizen",
+  "fancifulName": "Hefeweizen",
+  "classType": null,
   "alcoholContent": "5.6% ALC./VOL.",
   "netContents": "375 mL",
   "producerNameAddress": "IRON ANCHOR BREWING, SANTA FE, NM",

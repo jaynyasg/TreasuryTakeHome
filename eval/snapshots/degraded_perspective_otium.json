@@ -2,8 +2,8 @@
   "brandName": "Otium Cellars",
   "fancifulName": null,
   "classType": "Pinot Gris",
-  "alcoholContent": "12% ALC/VOL",
-  "netContents": "750 ML",
+  "alcoholContent": null,
+  "netContents": null,
   "producerNameAddress": "Produced & Bottled by Otium Cellars, Waterford, Virginia",
   "countryOfOrigin": null,
   "wineAppellation": "Loudoun County, Virginia",
@@ -13,5 +13,5 @@
     "text": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
     "headingStyle": "all_caps"
   },
-  "readability": "clear"
+  "readability": "partial"
 }

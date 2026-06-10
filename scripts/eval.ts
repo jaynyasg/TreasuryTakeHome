@@ -19,11 +19,19 @@ import {
 import { buildMatchReport } from "../lib/engine/score";
 import { generateCase } from "../lib/engine/generator";
 import { renderLabelSvg } from "../lib/labelSvg";
+import { REAL_EXAMPLES } from "../lib/fixtures";
 
 const ROOT = path.join(__dirname, "..");
 const IMAGES = path.join(ROOT, "eval", "images");
 const SNAPSHOTS = path.join(ROOT, "eval", "snapshots");
 const LIVE = process.argv.includes("--live");
+// --only <prefix>: limit live re-recording to matching case ids (cost control).
+const ONLY_IDX = process.argv.indexOf("--only");
+const ONLY = ONLY_IDX >= 0 ? process.argv[ONLY_IDX + 1] : null;
+
+function selected(id: string): boolean {
+  return !ONLY || id.startsWith(ONLY);
+}
 
 interface Expectation {
   overall: MatchReport["overall"];
@@ -40,10 +48,30 @@ interface RealCase {
   expect: Expectation;
 }
 
+interface DegradedCase {
+  id: string;
+  baseId: string;
+  images: string[];
+  /** Fields legitimately flagged even on the clean image (e.g. 8 Chains classType). */
+  allowedFlagged: FieldKey[];
+}
+
 interface Golden {
   cases: RealCase[];
+  degradedCases: DegradedCase[];
   generatedSeeds: Array<{ seed: number; defects: number }>;
 }
+
+/** D8.1 anti-escape-hatch floor: degraded cases must still read most of the label. */
+const CORE_FIELDS: FieldKey[] = [
+  "brandName",
+  "classType",
+  "alcoholContent",
+  "netContents",
+  "producerNameAddress",
+  "governmentWarning",
+];
+const CORE_FLOOR = 4;
 
 const golden = JSON.parse(
   fs.readFileSync(path.join(ROOT, "eval", "golden.json"), "utf8")
@@ -106,7 +134,7 @@ async function main(): Promise<void> {
   for (const c of golden.cases) {
     const app = ColaApplication.parse(c.application);
     let extracted: ExtractedLabel | null;
-    if (LIVE) {
+    if (LIVE && selected(c.id)) {
       extracted = await liveExtract(c.id, c.images.map(fileDataUrl));
     } else {
       extracted = loadSnapshot(c.id);
@@ -118,6 +146,48 @@ async function main(): Promise<void> {
     grade(c.id, app, extracted, c.expect);
   }
 
+  // Degraded cases (AC-1): the label genuinely matches its application, so any
+  // mismatch/missing verdict outside the allowed list is a confident misread
+  // (RED), and over-flagging is capped by the >=4/6 core-field floor.
+  for (const d of golden.degradedCases) {
+    const base = REAL_EXAMPLES.find((e) => e.id === d.baseId);
+    if (!base) {
+      check(`${d.id}: baseId ${d.baseId} exists`, false);
+      continue;
+    }
+    let extracted: ExtractedLabel | null;
+    if (LIVE && selected(d.id)) {
+      extracted = await liveExtract(d.id, d.images.map(fileDataUrl));
+    } else {
+      extracted = loadSnapshot(d.id);
+      if (!extracted) {
+        check(`${d.id}: snapshot exists`, false, "run `npm run eval:live -- --only degraded` once to record");
+        continue;
+      }
+    }
+    const report = buildMatchReport(base.application, extracted);
+    const wronglyFlagged = report.verdicts.filter(
+      (v) =>
+        (v.status === "mismatch" || v.status === "missing_on_label") &&
+        !d.allowedFlagged.includes(v.field)
+    );
+    check(
+      `${d.id}: never confidently wrong (no unexpected mismatch/missing)`,
+      wronglyFlagged.length === 0,
+      wronglyFlagged.map((v) => `${v.field}:${v.status}`).join(", ") || "clean"
+    );
+    const coreCorrect = report.verdicts.filter(
+      (v) =>
+        CORE_FIELDS.includes(v.field) &&
+        (v.status === "match" || v.status === "close_match")
+    ).length;
+    check(
+      `${d.id}: extraction floor >=${CORE_FLOOR}/6 core fields`,
+      coreCorrect >= CORE_FLOOR,
+      `${coreCorrect}/6 (${report.matchPercentage}%)`
+    );
+  }
+
   for (const g of golden.generatedSeeds) {
     const id = `gen_${g.seed}_${g.defects}d`;
     const gc = generateCase(g.seed, { defects: g.defects });
@@ -127,7 +197,7 @@ async function main(): Promise<void> {
       flaggedFields: gc.injectedDefects.map((d) => d.field),
     };
     let extracted: ExtractedLabel | null;
-    if (LIVE) {
+    if (LIVE && selected(id)) {
       extracted = await liveExtract(id, [await renderedDataUrl(renderLabelSvg(gc, g.seed))]);
     } else {
       extracted = loadSnapshot(id);

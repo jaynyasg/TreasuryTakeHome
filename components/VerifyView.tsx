@@ -32,6 +32,11 @@ const EMPTY_APPLICATION: ColaApplication = {
 
 const SAMPLE_APPLICATION = OTIUM_APPLICATION;
 const SAMPLE_IMAGES = ["/samples/otium-front.jpg", "/samples/otium-back.jpg"];
+/** Same COLA, photographed badly (perspective skew) — demos honest needs_review. */
+const DEGRADED_SAMPLE_IMAGES = [
+  "/samples/degraded-otium-front.jpg",
+  "/samples/degraded-otium-back.jpg",
+];
 
 interface LabelImage {
   name: string;
@@ -62,13 +67,13 @@ export default function VerifyView() {
     }
   };
 
-  const loadSample = async () => {
+  const loadSample = async (imageUrls: string[]) => {
     setError(null);
     setResult(null);
     setApplication(SAMPLE_APPLICATION);
     try {
       const imgs = await Promise.all(
-        SAMPLE_IMAGES.map(async (url) => {
+        imageUrls.map(async (url) => {
           const blob = await fetch(url).then((r) => r.blob());
           const name = url.split("/").pop()!;
           const file = new File([blob], name, { type: blob.type || "image/jpeg" });
@@ -114,9 +119,14 @@ export default function VerifyView() {
         <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-[15px] font-semibold">Application (Form 5100.31)</h2>
-            <Chip tone="highlight" onClick={() => void loadSample()}>
-              Load real example
-            </Chip>
+            <div className="flex gap-1.5">
+              <Chip tone="highlight" onClick={() => void loadSample(SAMPLE_IMAGES)}>
+                Load real example
+              </Chip>
+              <Chip onClick={() => void loadSample(DEGRADED_SAMPLE_IMAGES)}>
+                Try a bad photo
+              </Chip>
+            </div>
           </div>
           <ApplicationForm value={application} onChange={setApplication} />
         </Card>

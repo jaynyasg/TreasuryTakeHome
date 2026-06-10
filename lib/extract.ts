@@ -19,7 +19,8 @@ Rules:
 - netContents: as printed, e.g. "750 mL".
 - governmentWarning.text: the COMPLETE warning statement verbatim, including its heading, preserving the exact capitalization printed on the label.
 - governmentWarning.headingStyle: "all_caps" only if the "GOVERNMENT WARNING:" lead-in is printed entirely in capital letters; "title_case" if written like "Government Warning:"; otherwise "other".
-- readability: "clear" if you can read the whole label confidently; "partial" if glare/angle/blur makes some regions uncertain; "unreadable" if most of it cannot be read.`;
+- readability: "clear" if you can read the whole label confidently; "partial" if glare/angle/blur makes some regions uncertain; "unreadable" if most of it cannot be read.
+- HONESTY OVER COMPLETENESS: if blur, glare, rotation, perspective, or shadow leaves you less than certain of the EXACT characters in a field (especially numbers like alcohol % and net contents), set that field to null and readability to "partial" — NEVER guess. A guessed number presented as fact is the worst possible output; a null with readability "partial" is the correct answer for an unreadable region.`;
 
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
@@ -126,7 +127,7 @@ function finishExtraction(
     throw new ExtractionError(`Model output violated the contract: ${result.error.message}`);
   }
   return {
-    label: scrubPlaceholders(result.data),
+    label: repairReadability(scrubPlaceholders(result.data)),
     usage: {
       inputTokens: completion.usage?.prompt_tokens ?? 0,
       outputTokens: completion.usage?.completion_tokens ?? 0,
@@ -134,11 +135,34 @@ function finishExtraction(
   };
 }
 
+/**
+ * Consistency repair: a null MANDATORY field together with readability "clear"
+ * is self-contradictory (the null is an admission something couldn't be read).
+ * Downgrade to "partial" so downstream verdicts become needs_review instead of
+ * a confident missing_on_label. Optional fields (fanciful name, appellation,
+ * vintage, origin) are legitimately null and don't trigger this.
+ */
+function repairReadability(label: ExtractedLabel): ExtractedLabel {
+  if (label.readability !== "clear") return label;
+  const mandatoryNull =
+    label.brandName === null ||
+    label.alcoholContent === null ||
+    label.netContents === null ||
+    (label.governmentWarning.present && label.governmentWarning.text === null);
+  return mandatoryNull ? { ...label, readability: "partial" } : label;
+}
+
 const PLACEHOLDERS = new Set(["", ".", "-", "n/a", "na", "none", "null", "not visible", "not present"]);
 
 function nullIfPlaceholder(value: string | null): string | null {
   if (value === null) return null;
-  return PLACEHOLDERS.has(value.trim().toLowerCase()) ? null : value;
+  const trimmed = value.trim();
+  // Known placeholder words, or any value with no letters/digits at all
+  // (models emit ".", ":", "—" etc. for unreadable regions despite instructions).
+  if (PLACEHOLDERS.has(trimmed.toLowerCase()) || !/[\p{L}\p{N}]/u.test(trimmed)) {
+    return null;
+  }
+  return value;
 }
 
 /** Models sometimes emit "." or "N/A" instead of null despite instructions. */

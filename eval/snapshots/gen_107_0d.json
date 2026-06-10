@@ -1,12 +1,12 @@
 {
   "brandName": "RED GATE WINERY",
-  "fancifulName": null,
+  "fancifulName": ": null",
   "classType": "Table Red Wine",
   "alcoholContent": "11.5% ALC./VOL.",
   "netContents": "750 mL",
   "producerNameAddress": "RED GATE WINERY, AUSTIN, TX",
-  "countryOfOrigin": null,
-  "wineAppellation": null,
+  "countryOfOrigin": ": null",
+  "wineAppellation": ": null",
   "wineVintage": "2020",
   "governmentWarning": {
     "present": true,
