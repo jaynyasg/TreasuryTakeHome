@@ -1,0 +1,5 @@
+# Deny all by default — session artifacts must not leak to git.
+*
+
+# Allow only this file for local deny-by-default semantics.
+!.gitignore

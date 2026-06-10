@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: "ss01", "cv11", "cv02";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    font-family: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.011em;
+  }
+  ::selection {
+    background: rgba(79, 90, 120, 0.18);
+  }
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .dot-grid {
+    background-image: radial-gradient(circle, rgba(11, 11, 13, 0.05) 1px, transparent 1.4px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(120% 100% at 50% 0%, #000 35%, transparent 95%);
+    mask-image: radial-gradient(120% 100% at 50% 0%, #000 35%, transparent 95%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-travel,
+  .animate-shimmer,
+  .animate-breathe,
+  .animate-spinSlow {
+    animation: none !important;
+  }
+}

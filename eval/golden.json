@@ -1,0 +1,84 @@
+{
+  "comment": "Golden eval cases. 'real' cases use hand-transcribed applications from the LabelExample PDFs (public COLA registry). Expectations grade the FULL pipeline: extraction + engine.",
+  "cases": [
+    {
+      "id": "otium_pinot_gris",
+      "kind": "real",
+      "images": ["labelexample1_p2_0.jpg", "labelexample1_p3_1.jpg"],
+      "application": {
+        "serialNumber": "100002",
+        "beverageType": "wine",
+        "sourceOfProduct": "domestic",
+        "brandName": "OTIUM CELLARS",
+        "classType": "Pinot Gris",
+        "alcoholContent": "12",
+        "netContents": "750 MILLILITERS",
+        "applicantNameAddress": "EIGHT CHAINS NORTH, FURNACE MOUNTAIN VINEYARDS LLC, 38593 DAYMONT LN, WATERFORD VA 20197, OTIUM CELLARS",
+        "wineAppellation": "LOUDOUN COUNTY VIRGINIA",
+        "wineVintage": "2009"
+      },
+      "expect": {
+        "overall": "all_match",
+        "minMatch": 100,
+        "flaggedFields": [],
+        "warningStatus": "match"
+      }
+    },
+    {
+      "id": "santa_fe_straight_malt",
+      "kind": "real",
+      "images": ["labelexample2_p2_0.jpg"],
+      "application": {
+        "serialNumber": "100010",
+        "beverageType": "distilled_spirits",
+        "sourceOfProduct": "domestic",
+        "brandName": "SANTA FE SPIRITS",
+        "classType": "Straight Malt Whiskey",
+        "alcoholContent": "46%",
+        "netContents": "750 MILLILITERS",
+        "applicantNameAddress": "SANTA FE DISTILLERY, L.L.C., 7505 MALLARD WAY UNIT 1, SANTA FE NM 87506, SANTA FE SPIRITS"
+      },
+      "expect": {
+        "overall": "all_match",
+        "minMatch": 100,
+        "flaggedFields": [],
+        "warningStatus": "match"
+      }
+    },
+    {
+      "id": "eight_chains_reserve_red",
+      "kind": "real",
+      "comment": "Hard case: cert class is TABLE RED WINE but label prints DRY RED WINE; fanciful RESERVE FURNACE MOUNTAIN RED is split across stylized elements. Conservative flagging for agent review is the CORRECT outcome.",
+      "images": ["labelexample3_p2_0.jpg"],
+      "application": {
+        "serialNumber": "100001",
+        "beverageType": "wine",
+        "sourceOfProduct": "domestic",
+        "brandName": "8 CHAINS NORTH",
+        "fancifulName": "RESERVE FURNACE MOUNTAIN RED",
+        "classType": "TABLE RED WINE",
+        "alcoholContent": "13.5",
+        "netContents": "750 MILLILITERS",
+        "applicantNameAddress": "EIGHT CHAINS NORTH, FURNACE MOUNTAIN VINEYARDS LLC, 38593 DAYMONT LN, WATERFORD VA 20197",
+        "wineAppellation": "LOUDOUN COUNTY VIRGINIA",
+        "wineVintage": "2008"
+      },
+      "expect": {
+        "overall": "has_mismatches",
+        "minMatch": 60,
+        "flaggedFields": ["classType"],
+        "warningStatus": "match"
+      }
+    }
+  ],
+  "generatedSeeds": [
+    { "seed": 101, "defects": 0 },
+    { "seed": 102, "defects": 0 },
+    { "seed": 103, "defects": 1 },
+    { "seed": 104, "defects": 1 },
+    { "seed": 105, "defects": 2 },
+    { "seed": 106, "defects": 2 },
+    { "seed": 107, "defects": 0 },
+    { "seed": 108, "defects": 1 }
+  ]
+}

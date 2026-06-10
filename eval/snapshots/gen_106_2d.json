@@ -1,0 +1,17 @@
+{
+  "brandName": "8 CHAINS NORTH",
+  "fancifulName": null,
+  "classType": "Cabernet Sauvignon",
+  "alcoholContent": "13% ALC./VOL.",
+  "netContents": "750 mL",
+  "producerNameAddress": "8 CHAINS NORTH, PORTLAND, OR",
+  "countryOfOrigin": null,
+  "wineAppellation": null,
+  "wineVintage": "2022",
+  "governmentWarning": {
+    "present": true,
+    "text": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    "headingStyle": "all_caps"
+  },
+  "readability": "clear"
+}

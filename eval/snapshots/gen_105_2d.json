@@ -1,0 +1,17 @@
+{
+  "brandName": "STONE'S THROW",
+  "fancifulName": ":",
+  "classType": "Single Malt Whiskey",
+  "alcoholContent": "48% ALC./VOL.",
+  "netContents": "12 FL. OZ.",
+  "producerNameAddress": "STONE'S THROW, LOUISVILLE, KY",
+  "countryOfOrigin": ":",
+  "wineAppellation": ":",
+  "wineVintage": ":",
+  "governmentWarning": {
+    "present": true,
+    "text": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    "headingStyle": "all_caps"
+  },
+  "readability": "clear"
+}

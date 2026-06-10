@@ -1,0 +1,235 @@
+import {
+  ColaApplication,
+  ExtractedLabel,
+  FieldKey,
+  FieldVerdict,
+  MatchReport,
+} from "@/lib/contract";
+import {
+  compareAlcoholContent,
+  compareNetContents,
+  compareProducerAddress,
+  compareText,
+} from "./normalize";
+import { checkGovernmentWarning } from "./warning";
+
+type TextComparisonKind = "exact" | "close" | "different";
+
+function verdictFromComparison(
+  field: FieldKey,
+  applicationValue: string,
+  labelValue: string,
+  kind: TextComparisonKind,
+  reason: string
+): FieldVerdict {
+  const status =
+    kind === "exact" ? "match" : kind === "close" ? "close_match" : "mismatch";
+  return { field, status, applicationValue, labelValue, reason };
+}
+
+/** Required-by-application field absent from the label. */
+function absentVerdict(
+  field: FieldKey,
+  applicationValue: string,
+  readability: ExtractedLabel["readability"],
+  what: string
+): FieldVerdict {
+  if (readability !== "clear") {
+    return {
+      field,
+      status: "needs_review",
+      applicationValue,
+      labelValue: null,
+      reason: `Could not read ${what} from the label image (image is ${readability}). An agent should review the original.`,
+    };
+  }
+  return {
+    field,
+    status: "missing_on_label",
+    applicationValue,
+    labelValue: null,
+    reason: `${what} appears on the application but was not found on the label.`,
+  };
+}
+
+function notApplicable(field: FieldKey, why: string): FieldVerdict {
+  return {
+    field,
+    status: "not_applicable",
+    applicationValue: null,
+    labelValue: null,
+    reason: why,
+  };
+}
+
+/**
+ * The core matching oracle: pure function from (application, extracted label)
+ * to a per-field report with reasons and an overall match percentage.
+ */
+export function buildMatchReport(
+  app: ColaApplication,
+  label: ExtractedLabel
+): MatchReport {
+  const verdicts: FieldVerdict[] = [];
+  const r = label.readability;
+
+  // Brand name — required always.
+  verdicts.push(
+    label.brandName === null
+      ? absentVerdict("brandName", app.brandName, r, "the brand name")
+      : (() => {
+          const c = compareText(app.brandName, label.brandName);
+          return verdictFromComparison("brandName", app.brandName, label.brandName, c.kind, c.reason);
+        })()
+  );
+
+  // Fanciful name — only if the application declares one.
+  if (app.fancifulName) {
+    verdicts.push(
+      label.fancifulName === null
+        ? absentVerdict("fancifulName", app.fancifulName, r, "the fanciful name")
+        : (() => {
+            const c = compareText(app.fancifulName!, label.fancifulName!);
+            return verdictFromComparison("fancifulName", app.fancifulName!, label.fancifulName!, c.kind, c.reason);
+          })()
+    );
+  } else {
+    verdicts.push(notApplicable("fancifulName", "No fanciful name on the application."));
+  }
+
+  // Class/type — required always.
+  verdicts.push(
+    label.classType === null
+      ? absentVerdict("classType", app.classType, r, "the class/type designation")
+      : (() => {
+          const c = compareText(app.classType, label.classType);
+          return verdictFromComparison("classType", app.classType, label.classType, c.kind, c.reason);
+        })()
+  );
+
+  // Alcohol content.
+  verdicts.push(
+    label.alcoholContent === null
+      ? absentVerdict("alcoholContent", app.alcoholContent, r, "the alcohol content")
+      : (() => {
+          const c = compareAlcoholContent(app.alcoholContent, label.alcoholContent);
+          return {
+            field: "alcoholContent" as const,
+            status: c.equivalent
+              ? app.alcoholContent === label.alcoholContent
+                ? ("match" as const)
+                : ("close_match" as const)
+              : ("mismatch" as const),
+            applicationValue: app.alcoholContent,
+            labelValue: label.alcoholContent,
+            reason: c.reason,
+          };
+        })()
+  );
+
+  // Net contents.
+  verdicts.push(
+    label.netContents === null
+      ? absentVerdict("netContents", app.netContents, r, "the net contents")
+      : (() => {
+          const c = compareNetContents(app.netContents, label.netContents);
+          return {
+            field: "netContents" as const,
+            status: c.equivalent
+              ? app.netContents === label.netContents
+                ? ("match" as const)
+                : ("close_match" as const)
+              : ("mismatch" as const),
+            applicationValue: app.netContents,
+            labelValue: label.netContents,
+            reason: c.reason,
+          };
+        })()
+  );
+
+  // Producer name & address.
+  verdicts.push(
+    label.producerNameAddress === null
+      ? absentVerdict("producerNameAddress", app.applicantNameAddress, r, "the bottler/producer name and address")
+      : (() => {
+          const c = compareProducerAddress(app.applicantNameAddress, label.producerNameAddress!);
+          return verdictFromComparison(
+            "producerNameAddress",
+            app.applicantNameAddress,
+            label.producerNameAddress!,
+            c.kind,
+            c.reason
+          );
+        })()
+  );
+
+  // Country of origin — required for imports only.
+  if (app.sourceOfProduct === "imported") {
+    const expected = app.countryOfOrigin ?? "country of origin statement";
+    verdicts.push(
+      label.countryOfOrigin === null
+        ? absentVerdict("countryOfOrigin", expected, r, "the country of origin (required for imports)")
+        : (() => {
+            const c = compareText(expected, label.countryOfOrigin!);
+            return verdictFromComparison("countryOfOrigin", expected, label.countryOfOrigin!, c.kind, c.reason);
+          })()
+    );
+  } else {
+    verdicts.push(notApplicable("countryOfOrigin", "Domestic product — no country of origin required."));
+  }
+
+  // Wine-only fields, and only when declared on the application.
+  for (const [field, appValue, what] of [
+    ["wineAppellation", app.wineAppellation, "the wine appellation"],
+    ["wineVintage", app.wineVintage, "the vintage date"],
+  ] as const) {
+    if (app.beverageType === "wine" && appValue) {
+      verdicts.push(
+        label[field] === null
+          ? absentVerdict(field, appValue, r, what)
+          : (() => {
+              const c = compareText(appValue, label[field]!);
+              return verdictFromComparison(field, appValue, label[field]!, c.kind, c.reason);
+            })()
+      );
+    } else {
+      verdicts.push(
+        notApplicable(
+          field,
+          app.beverageType === "wine"
+            ? `Not declared on the application.`
+            : `Not applicable to ${app.beverageType.replace("_", " ")}.`
+        )
+      );
+    }
+  }
+
+  // Government warning — required always, exact.
+  verdicts.push(checkGovernmentWarning(label.governmentWarning));
+
+  const applicable = verdicts.filter((v) => v.status !== "not_applicable");
+  const matched = applicable.filter(
+    (v) => v.status === "match" || v.status === "close_match"
+  );
+  const matchPercentage = applicable.length
+    ? Math.round((matched.length / applicable.length) * 100)
+    : 100;
+
+  const hasProblems = applicable.some(
+    (v) => v.status === "mismatch" || v.status === "missing_on_label"
+  );
+  const needsReview = applicable.some((v) => v.status === "needs_review");
+  const overall = hasProblems ? "has_mismatches" : needsReview ? "needs_review" : "all_match";
+
+  const problemFields = applicable
+    .filter((v) => v.status !== "match" && v.status !== "close_match")
+    .map((v) => v.field);
+  const summary =
+    overall === "all_match"
+      ? `All ${applicable.length} checked fields are consistent with the application.`
+      : overall === "needs_review"
+        ? `${matched.length}/${applicable.length} fields verified; agent review needed for: ${problemFields.join(", ")}.`
+        : `${matched.length}/${applicable.length} fields match; issues with: ${problemFields.join(", ")}.`;
+
+  return { matchPercentage, verdicts, overall, summary };
+}
