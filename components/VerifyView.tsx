@@ -193,12 +193,12 @@ export default function VerifyView() {
         {result ? (
           <ResultPanel result={result} />
         ) : (
-          <Card className="flex min-h-[300px] items-center justify-center text-center">
+          <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">
             <div className="max-w-[260px] text-[13px] leading-relaxed text-muted">
               Fill in the application, add the label images, and the match report will appear
               here — typically in about 5 seconds.
             </div>
-          </Card>
+          </div>
         )}
       </div>
     </div>
