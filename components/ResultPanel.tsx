@@ -61,11 +61,11 @@ export default function ResultPanel({ result }: { result: VerifyResponse }) {
               <>
                 <div className="mt-1.5 grid grid-cols-2 gap-2 text-[11.5px]">
                   <div>
-                    <span className="uppercase tracking-[0.08em] text-muted-2">Application </span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Application </span>
                     <span className="font-mono text-ink-2">{v.applicationValue ?? "—"}</span>
                   </div>
                   <div>
-                    <span className="uppercase tracking-[0.08em] text-muted-2">Label </span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Label </span>
                     <span className="font-mono text-ink-2">{v.labelValue ?? "—"}</span>
                   </div>
                 </div>
