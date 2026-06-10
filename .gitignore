@@ -8,3 +8,6 @@ next-env.d.ts
 unpacked/
 
 .vercel
+
+~$*.docx
+~WRL*.tmp
