@@ -4,11 +4,19 @@ import { useRef, useState } from "react";
 import Card from "@/components/house/Card";
 import IconButton from "@/components/house/IconButton";
 import Chip from "@/components/house/Chip";
-import { Sparkles, Image as ImageIcon, X as XIcon } from "@/components/house/icons";
+import Stepper from "@/components/house/Stepper";
+import { Sparkles, Image as ImageIcon, X as XIcon, Bolt } from "@/components/house/icons";
 import ApplicationForm from "@/components/ApplicationForm";
 import ResultPanel from "@/components/ResultPanel";
 import { ColaApplication, VerifyResponse } from "@/lib/contract";
 import { fileToDataUrl, verifyCase } from "@/lib/client";
+
+/** Steps mirror the real pipeline; advancement is driven by server stage events. */
+const VERIFY_STEPS = [
+  { label: "Upload", icon: <ImageIcon /> },
+  { label: "Read label", icon: <Sparkles /> },
+  { label: "Match fields", icon: <Bolt /> },
+];
 
 const EMPTY_APPLICATION: ColaApplication = {
   serialNumber: "",
@@ -46,6 +54,7 @@ export default function VerifyView() {
   const [application, setApplication] = useState<ColaApplication>(EMPTY_APPLICATION);
   const [images, setImages] = useState<LabelImage[]>([]);
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VerifyResponse | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -95,10 +104,15 @@ export default function VerifyView() {
 
   const onVerify = async () => {
     setBusy(true);
+    setStep(0);
     setError(null);
     setResult(null);
     try {
-      setResult(await verifyCase(application, images.map((i) => i.dataUrl)));
+      setResult(
+        await verifyCase(application, images.map((i) => i.dataUrl), (stage) =>
+          setStep(stage === "extracting" ? 1 : 2)
+        )
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
@@ -190,7 +204,18 @@ export default function VerifyView() {
       </div>
 
       <div>
-        {result ? (
+        {busy ? (
+          <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-card border border-dashed border-line bg-surface/40 px-4 text-center">
+            <Stepper steps={VERIFY_STEPS} current={step} />
+            <p className="text-[12px] text-muted" aria-live="polite">
+              {step === 0
+                ? "Sending the label images…"
+                : step === 1
+                  ? "Reading every field printed on the label…"
+                  : "Comparing the label against the application…"}
+            </p>
+          </div>
+        ) : result ? (
           <ResultPanel result={result} />
         ) : (
           <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">

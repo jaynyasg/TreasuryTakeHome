@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ColaApplication, VerifyResponse, ApiError } from "@/lib/contract";
+import {
+  ApiError,
+  ColaApplication,
+  StageEvent,
+  VerifyResponse,
+} from "@/lib/contract";
 import { extractLabel, ExtractionError } from "@/lib/extract";
 import { buildMatchReport } from "@/lib/engine/score";
 import { z } from "zod";
@@ -12,7 +17,13 @@ const VerifyRequest = z.object({
   imageDataUrls: z.array(z.string().startsWith("data:image/")).min(1).max(4),
 });
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+/**
+ * Streams NDJSON: zero or more StageEvent lines ("extracting", "matching")
+ * emitted when each phase actually starts, then exactly one terminal line —
+ * a VerifyResponse on success or an ApiError on failure. Request-shape
+ * errors are rejected up front as plain JSON 400s before any stream starts.
+ */
+export async function POST(req: NextRequest): Promise<Response> {
   const started = Date.now();
   let body: unknown;
   try {
@@ -25,22 +36,37 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return error(400, `Invalid request: ${parsed.error.issues[0]?.message ?? "schema mismatch"}`);
   }
 
-  try {
-    const extracted = await extractLabel(parsed.data.imageDataUrls);
-    const report = buildMatchReport(parsed.data.application, extracted);
-    const response: VerifyResponse = {
-      ok: true,
-      extracted,
-      report,
-      elapsedMs: Date.now() - started,
-    };
-    return NextResponse.json(response);
-  } catch (err) {
-    if (err instanceof ExtractionError) {
-      return error(502, `Label extraction failed: ${err.message}`);
-    }
-    return error(500, err instanceof Error ? err.message : "Unexpected error");
-  }
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: StageEvent | VerifyResponse | ApiError) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+      try {
+        send({ stage: "extracting" });
+        const extracted = await extractLabel(parsed.data.imageDataUrls);
+        send({ stage: "matching" });
+        const report = buildMatchReport(parsed.data.application, extracted);
+        send({ ok: true, extracted, report, elapsedMs: Date.now() - started });
+      } catch (err) {
+        const message =
+          err instanceof ExtractionError
+            ? `Label extraction failed: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : "Unexpected error";
+        send({ ok: false, error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache",
+    },
+  });
 }
 
 function error(status: number, message: string): NextResponse {

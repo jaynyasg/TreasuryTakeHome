@@ -27,13 +27,34 @@ function img(name: string): string {
   return `data:image/jpeg;base64,${buf.toString("base64")}`;
 }
 
-async function post(body: unknown): Promise<{ status: number; json: unknown }> {
+/**
+ * Success responses stream NDJSON (stage lines + one terminal object);
+ * request-shape errors come back as plain JSON 400s. Parse both.
+ */
+async function post(body: unknown): Promise<{ status: number; json: unknown; stages: string[] }> {
   const res = await fetch(`${BASE}/api/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
-  return { status: res.status, json: await res.json().catch(() => null) };
+  const text = await res.text();
+  const stages: string[] = [];
+  let terminal: unknown = null;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj && typeof obj === "object" && "stage" in obj) {
+      stages.push(String((obj as { stage: unknown }).stage));
+    } else {
+      terminal = obj;
+    }
+  }
+  return { status: res.status, json: terminal, stages };
 }
 
 let failures = 0;
@@ -50,6 +71,11 @@ async function main(): Promise<void> {
   });
   const parsed = VerifyResponse.safeParse(happy.json);
   check("happy path returns 200 + contract-valid body", happy.status === 200 && parsed.success);
+  check(
+    "stream emits real stage events in order",
+    happy.stages.join(",") === "extracting,matching",
+    `stages: [${happy.stages.join(", ")}]`
+  );
   if (parsed.success) {
     check(
       "OTIUM sample scores 100 with all_match",

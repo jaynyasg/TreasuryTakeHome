@@ -3,25 +3,69 @@
 import {
   ApiError,
   ColaApplication,
+  StageEvent,
   VerifyResponse,
 } from "@/lib/contract";
 
-/** Client-side seam: every server response is parsed against the contract. */
+export type VerifyStage = StageEvent["stage"];
+
+/**
+ * Client-side seam: every server payload is parsed against the contract.
+ * The server streams NDJSON — StageEvent lines (forwarded to onStage as the
+ * phases actually start) followed by one terminal VerifyResponse/ApiError.
+ */
 export async function verifyCase(
   application: ColaApplication,
-  imageDataUrls: string[]
+  imageDataUrls: string[],
+  onStage?: (stage: VerifyStage) => void
 ): Promise<VerifyResponse> {
   const res = await fetch("/api/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ application, imageDataUrls }),
   });
-  const json: unknown = await res.json().catch(() => null);
   if (!res.ok) {
+    const json: unknown = await res.json().catch(() => null);
     const err = ApiError.safeParse(json);
     throw new Error(err.success ? err.data.error : `Request failed (${res.status})`);
   }
-  const parsed = VerifyResponse.safeParse(json);
+  if (!res.body) throw new Error("Server returned no response body.");
+
+  let terminal: unknown = null;
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      throw new Error("Server response violated the contract.");
+    }
+    const stage = StageEvent.safeParse(obj);
+    if (stage.success) {
+      onStage?.(stage.data.stage);
+      return;
+    }
+    terminal = obj;
+  };
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      handleLine(buffer.slice(0, nl));
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  handleLine(buffer);
+
+  const err = ApiError.safeParse(terminal);
+  if (err.success) throw new Error(err.data.error);
+  const parsed = VerifyResponse.safeParse(terminal);
   if (!parsed.success) throw new Error("Server response violated the contract.");
   return parsed.data;
 }

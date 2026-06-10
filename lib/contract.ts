@@ -106,6 +106,15 @@ export const ApiError = z.object({
 });
 export type ApiError = z.infer<typeof ApiError>;
 
+/**
+ * Progress events streamed (NDJSON) by /api/verify ahead of the final
+ * VerifyResponse — real signals, emitted when each phase actually starts.
+ */
+export const StageEvent = z.object({
+  stage: z.enum(["extracting", "matching"]),
+});
+export type StageEvent = z.infer<typeof StageEvent>;
+
 /** A generated mock application + matching (or deliberately flawed) label spec. */
 export const GeneratedCase = z.object({
   application: ColaApplication,
