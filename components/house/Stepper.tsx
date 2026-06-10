@@ -109,7 +109,7 @@ function StepNode({ icon, label, state }: { icon: ReactNode; label: string; stat
 
 function Connector({ state }: { state: "idle" | "active" | "done" }) {
   return (
-    <div className="relative mx-1.5 h-[3px] w-10 rounded-full bg-line sm:w-16">
+    <div className="relative mx-1 h-[3px] w-5 rounded-full bg-line sm:mx-1.5 sm:w-16">
       <div
         className={
           "absolute inset-y-0 left-0 rounded-full bg-accent transition-all duration-700 " +

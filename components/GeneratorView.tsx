@@ -80,7 +80,7 @@ export default function GeneratorView() {
             <h2 className="text-[15px] font-semibold">Mock application + label generator</h2>
             <p className="mt-0.5 text-[12px] text-muted">
               Generated labels are rendered to images and verified through the same vision
-              pipeline as uploads — nothing is faked.
+              pipeline as uploaded photos.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
