@@ -31,17 +31,53 @@ function getClient(): OpenAI {
   return client;
 }
 
-export class ExtractionError extends Error {}
+export class ExtractionError extends Error {
+  /** Transient upstream failure (429/5xx/timeout/network) — retry may succeed. */
+  readonly retryable: boolean;
+  constructor(message: string, retryable = false) {
+    super(message);
+    this.retryable = retryable;
+  }
+}
+
+export interface ExtractionResult {
+  label: ExtractedLabel;
+  /** Token usage for measured cost estimates. */
+  usage: { inputTokens: number; outputTokens: number };
+}
 
 /**
  * Extract label fields from a label set (one or more images — front, back,
  * neck — treated as a single label). Accepts data URLs or https URLs.
  * Throws ExtractionError on refusal, truncation, or contract violation.
  */
-export async function extractLabel(imageUrls: string | string[]): Promise<ExtractedLabel> {
+export async function extractLabel(imageUrls: string | string[]): Promise<ExtractionResult> {
   const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls];
   if (urls.length === 0) throw new ExtractionError("No label images provided");
-  const completion = await getClient().chat.completions.create({
+  let completion: OpenAI.Chat.Completions.ChatCompletion;
+  try {
+    completion = await createCompletion(urls);
+  } catch (err) {
+    // Classify upstream failures: 429/5xx/connection problems are transient
+    // (retryable); everything else is a hard failure.
+    if (err instanceof OpenAI.APIError) {
+      const status = typeof err.status === "number" ? err.status : undefined;
+      const transient =
+        err instanceof OpenAI.APIConnectionError ||
+        status === 429 ||
+        (status !== undefined && status >= 500);
+      throw new ExtractionError(`Vision model request failed: ${err.message}`, transient);
+    }
+    throw new ExtractionError(
+      err instanceof Error ? err.message : "Vision model request failed",
+      false
+    );
+  }
+  return finishExtraction(completion);
+}
+
+function createCompletion(urls: string[]): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  return getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: 0,
     max_tokens: 1500,
@@ -63,7 +99,11 @@ export async function extractLabel(imageUrls: string | string[]): Promise<Extrac
     ],
     response_format: zodResponseFormat(ExtractedLabel, "extracted_label"),
   });
+}
 
+function finishExtraction(
+  completion: OpenAI.Chat.Completions.ChatCompletion
+): ExtractionResult {
   const choice = completion.choices[0];
   if (!choice) throw new ExtractionError("Model returned no choices");
   if (choice.finish_reason === "length") {
@@ -85,7 +125,13 @@ export async function extractLabel(imageUrls: string | string[]): Promise<Extrac
   if (!result.success) {
     throw new ExtractionError(`Model output violated the contract: ${result.error.message}`);
   }
-  return scrubPlaceholders(result.data);
+  return {
+    label: scrubPlaceholders(result.data),
+    usage: {
+      inputTokens: completion.usage?.prompt_tokens ?? 0,
+      outputTokens: completion.usage?.completion_tokens ?? 0,
+    },
+  };
 }
 
 const PLACEHOLDERS = new Set(["", ".", "-", "n/a", "na", "none", "null", "not visible", "not present"]);

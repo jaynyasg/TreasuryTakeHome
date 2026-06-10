@@ -19,7 +19,7 @@ async function main(): Promise<void> {
     dataUrl(path.join(dir, f))
   );
   const started = Date.now();
-  const extracted = await extractLabel(images);
+  const { label: extracted } = await extractLabel(images);
   const extractMs = Date.now() - started;
   console.log("--- EXTRACTED (in", extractMs, "ms) ---");
   console.log(JSON.stringify(extracted, null, 2));

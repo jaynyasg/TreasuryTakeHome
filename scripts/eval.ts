@@ -83,10 +83,10 @@ function loadSnapshot(id: string): ExtractedLabel | null {
 
 async function liveExtract(id: string, imageDataUrls: string[]): Promise<ExtractedLabel> {
   const { extractLabel } = await import("../lib/extract");
-  const extracted = await extractLabel(imageDataUrls);
+  const { label } = await extractLabel(imageDataUrls);
   fs.mkdirSync(SNAPSHOTS, { recursive: true });
-  fs.writeFileSync(snapshotPath(id), JSON.stringify(extracted, null, 2));
-  return extracted;
+  fs.writeFileSync(snapshotPath(id), JSON.stringify(label, null, 2));
+  return label;
 }
 
 function fileDataUrl(name: string): string {

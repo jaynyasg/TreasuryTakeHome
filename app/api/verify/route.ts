@@ -43,18 +43,24 @@ export async function POST(req: NextRequest): Promise<Response> {
         controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
         send({ stage: "extracting" });
-        const extracted = await extractLabel(parsed.data.imageDataUrls);
+        const { label: extracted, usage } = await extractLabel(parsed.data.imageDataUrls);
         send({ stage: "matching" });
         const report = buildMatchReport(parsed.data.application, extracted);
-        send({ ok: true, extracted, report, elapsedMs: Date.now() - started });
+        send({ ok: true, extracted, report, elapsedMs: Date.now() - started, usage });
       } catch (err) {
-        const message =
-          err instanceof ExtractionError
-            ? `Label extraction failed: ${err.message}`
-            : err instanceof Error
-              ? err.message
-              : "Unexpected error";
-        send({ ok: false, error: message });
+        if (err instanceof ExtractionError) {
+          send({
+            ok: false,
+            error: `Label extraction failed: ${err.message}`,
+            retryable: err.retryable,
+          });
+        } else {
+          send({
+            ok: false,
+            error: err instanceof Error ? err.message : "Unexpected error",
+            retryable: false,
+          });
+        }
       } finally {
         controller.close();
       }

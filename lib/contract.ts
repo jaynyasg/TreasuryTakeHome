@@ -97,12 +97,23 @@ export const VerifyResponse = z.object({
   extracted: ExtractedLabel,
   report: MatchReport,
   elapsedMs: z.number(),
+  /** Model token usage for this extraction — drives measured cost estimates. */
+  usage: z
+    .object({ inputTokens: z.number(), outputTokens: z.number() })
+    .optional(),
 });
 export type VerifyResponse = z.infer<typeof VerifyResponse>;
 
 export const ApiError = z.object({
   ok: z.literal(false),
   error: z.string(),
+  /**
+   * True when the failure is transient (429/5xx/timeout/network) and the same
+   * request may succeed on retry. Refusals, validation and contract violations
+   * are never retryable. The streamed response is HTTP 200 by the time a
+   * terminal error line arrives, so retry logic keys off this field.
+   */
+  retryable: z.boolean().optional(),
 });
 export type ApiError = z.infer<typeof ApiError>;
 

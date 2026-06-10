@@ -9,27 +9,75 @@ import {
 
 export type VerifyStage = StageEvent["stage"];
 
+/** Typed failure crossing the client seam — carries the server's retryability verdict. */
+export class VerifyError extends Error {
+  readonly retryable: boolean;
+  constructor(message: string, retryable = false) {
+    super(message);
+    this.name = "VerifyError";
+    this.retryable = retryable;
+  }
+}
+
+const MAX_ATTEMPTS = 3; // 1 initial + 2 retries on retryable failures
+const RETRY_BASE_MS = 600;
+
+function retryDelayMs(attempt: number): number {
+  // Linear backoff with jitter: ~0.6-1.2s, then ~1.2-2.4s.
+  return RETRY_BASE_MS * attempt * (1 + Math.random());
+}
+
 /**
  * Client-side seam: every server payload is parsed against the contract.
- * The server streams NDJSON — StageEvent lines (forwarded to onStage as the
- * phases actually start) followed by one terminal VerifyResponse/ApiError.
+ * Retryable failures (429/5xx/timeout — server-classified) are retried here,
+ * inside the seam, so single verify and batch runs heal identically.
  */
 export async function verifyCase(
   application: ColaApplication,
   imageDataUrls: string[],
   onStage?: (stage: VerifyStage) => void
 ): Promise<VerifyResponse> {
-  const res = await fetch("/api/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ application, imageDataUrls }),
-  });
+  let lastError: VerifyError | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await verifyCaseOnce(application, imageDataUrls, onStage);
+    } catch (err) {
+      if (err instanceof VerifyError && err.retryable && attempt < MAX_ATTEMPTS) {
+        lastError = err;
+        await new Promise((r) => setTimeout(r, retryDelayMs(attempt)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError ?? new VerifyError("Verification failed after retries");
+}
+
+async function verifyCaseOnce(
+  application: ColaApplication,
+  imageDataUrls: string[],
+  onStage?: (stage: VerifyStage) => void
+): Promise<VerifyResponse> {
+  let res: Response;
+  try {
+    res = await fetch("/api/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ application, imageDataUrls }),
+    });
+  } catch {
+    // Network-level failure before any response — transient by nature.
+    throw new VerifyError("Network error — could not reach the server.", true);
+  }
   if (!res.ok) {
     const json: unknown = await res.json().catch(() => null);
     const err = ApiError.safeParse(json);
-    throw new Error(err.success ? err.data.error : `Request failed (${res.status})`);
+    throw new VerifyError(
+      err.success ? err.data.error : `Request failed (${res.status})`,
+      err.success ? (err.data.retryable ?? false) : res.status >= 500
+    );
   }
-  if (!res.body) throw new Error("Server returned no response body.");
+  if (!res.body) throw new VerifyError("Server returned no response body.");
 
   let terminal: unknown = null;
   const handleLine = (line: string) => {
@@ -38,7 +86,7 @@ export async function verifyCase(
     try {
       obj = JSON.parse(line);
     } catch {
-      throw new Error("Server response violated the contract.");
+      throw new VerifyError("Server response violated the contract.");
     }
     const stage = StageEvent.safeParse(obj);
     if (stage.success) {
@@ -64,9 +112,9 @@ export async function verifyCase(
   handleLine(buffer);
 
   const err = ApiError.safeParse(terminal);
-  if (err.success) throw new Error(err.data.error);
+  if (err.success) throw new VerifyError(err.data.error, err.data.retryable ?? false);
   const parsed = VerifyResponse.safeParse(terminal);
-  if (!parsed.success) throw new Error("Server response violated the contract.");
+  if (!parsed.success) throw new VerifyError("Server response violated the contract.");
   return parsed.data;
 }
 
