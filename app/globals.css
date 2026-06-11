@@ -15,7 +15,7 @@
     /* Vintage flag backdrop under a cream wash — content cards stay opaque
        warm white on top, so readability never depends on the photo. */
     background:
-      linear-gradient(rgba(245, 239, 230, 0.55), rgba(245, 239, 230, 0.55)),
+      linear-gradient(rgba(246, 237, 227, 0.55), rgba(246, 237, 227, 0.55)),
       url("/flag.png") center / cover no-repeat fixed;
     min-height: 100vh;
   }
