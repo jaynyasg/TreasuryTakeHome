@@ -15,10 +15,25 @@ const FIELD_LABELS: Record<FieldKey, string> = {
   governmentWarning: "Government warning",
 };
 
-const OVERALL: Record<VerifyResponse["report"]["overall"], { text: string; className: string }> = {
-  all_match: { text: "All fields match", className: "text-accent-green" },
-  needs_review: { text: "Agent review needed", className: "text-ink-2" },
-  has_mismatches: { text: "Issues found", className: "text-accent-red" },
+const OVERALL: Record<
+  VerifyResponse["report"]["overall"],
+  { text: string; className: string; wash: string }
+> = {
+  all_match: {
+    text: "All fields match",
+    className: "text-accent-green",
+    wash: "border-accent-green/20 bg-accent-green/5",
+  },
+  needs_review: {
+    text: "Agent review needed",
+    className: "text-ink-2",
+    wash: "border-accent-amber/30 bg-accent-amber/10",
+  },
+  has_mismatches: {
+    text: "Issues found",
+    className: "text-accent-red",
+    wash: "border-accent-red/20 bg-accent-red/5",
+  },
 };
 
 export default function ResultPanel({ result }: { result: VerifyResponse }) {
@@ -26,7 +41,9 @@ export default function ResultPanel({ result }: { result: VerifyResponse }) {
   const overall = OVERALL[report.overall];
   return (
     <Card className="animate-riseIn">
-      <div className="flex items-end justify-between border-b border-line-2 pb-4">
+      <div
+        className={`flex items-end justify-between rounded-lg border px-4 py-3 ${overall.wash}`}
+      >
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
             Match score
