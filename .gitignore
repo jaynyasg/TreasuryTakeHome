@@ -11,3 +11,5 @@ unpacked/
 
 ~$*.docx
 ~WRL*.tmp
+
+.demo-frames/

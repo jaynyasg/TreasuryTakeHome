@@ -7,6 +7,13 @@ generator for testing. Built per [PRD.md](PRD.md).
 
 **Live demo:** https://treasury-takehome-tau.vercel.app
 
+![Demo: verify a real COLA label (100% match), an honestly-flagged bad photo, and a mixed batch with real + generated labels](docs/demo.gif)
+
+*Demo reel: the real OTIUM COLA verifying at 100% with per-field reasons → a
+perspective-skewed "bad photo" of the same label flagged for review instead of
+mis-read → a mixed batch (real + degraded + generated labels) with CSV export.
+Regenerate with `node scripts/demo-gif.mjs && python scripts/make_gif.py`.*
+
 ## Quick start
 
 ```bash
