@@ -5,13 +5,19 @@ import Card from "@/components/house/Card";
 import IconButton from "@/components/house/IconButton";
 import Chip from "@/components/house/Chip";
 import Stepper from "@/components/house/Stepper";
-import { Sparkles, Image as ImageIcon, X as XIcon, Bolt } from "@/components/house/icons";
+import { Sparkles, Image as ImageIcon, X as XIcon, Bolt, FilePdf } from "@/components/house/icons";
 import ApplicationForm from "@/components/ApplicationForm";
 import ResultPanel from "@/components/ResultPanel";
 import Badge from "@/components/house/Badge";
 import { ColaApplication, VerifyResponse } from "@/lib/contract";
 import { OTIUM_APPLICATION, OTIUM_TTB_ID } from "@/lib/fixtures";
 import { fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
+import {
+  ACCEPTED_LABEL_FILE_TYPES,
+  isPdfDataUrl,
+  isSupportedLabelFile,
+  MAX_LABEL_FILES,
+} from "@/lib/labelFiles";
 
 /** Steps mirror the real pipeline; advancement is driven by server stage events. */
 const VERIFY_STEPS = [
@@ -42,6 +48,7 @@ const DEGRADED_SAMPLE_IMAGES = [
 interface LabelImage {
   name: string;
   dataUrl: string;
+  kind: "image" | "pdf";
 }
 
 export default function VerifyView() {
@@ -76,15 +83,22 @@ export default function VerifyView() {
     if (!files) return;
     setError(null);
     try {
+      const supported = Array.from(files).filter(isSupportedLabelFile);
+      if (supported.length === 0) {
+        setError("Add a PDF, PNG, JPEG, or WebP label file.");
+        return;
+      }
       const added = await Promise.all(
-        Array.from(files)
-          .filter((f) => f.type.startsWith("image/"))
-          .slice(0, 4 - images.length)
-          .map(async (f) => ({ name: f.name, dataUrl: await fileToDataUrl(f) }))
+        supported
+          .slice(0, MAX_LABEL_FILES - images.length)
+          .map(async (f) => {
+            const dataUrl = await fileToDataUrl(f);
+            return { name: f.name, dataUrl, kind: labelFileKind(dataUrl) };
+          })
       );
-      setImages((prev) => [...prev, ...added].slice(0, 4));
+      setImages((prev) => [...prev, ...added].slice(0, MAX_LABEL_FILES));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read the image file.");
+      setError(err instanceof Error ? err.message : "Could not read the label file.");
     }
   };
 
@@ -92,13 +106,13 @@ export default function VerifyView() {
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const items = Array.from(e.clipboardData?.items ?? []);
-      const imageFiles = items
-        .filter((i) => i.type.startsWith("image/"))
+      const labelFiles = items
+        .filter((i) => i.type.startsWith("image/") || i.type === "application/pdf")
         .map((i) => i.getAsFile())
-        .filter((f): f is File => f !== null);
-      if (imageFiles.length === 0) return;
+        .filter((f): f is File => f !== null && isSupportedLabelFile(f));
+      if (labelFiles.length === 0) return;
       e.preventDefault();
-      void addFiles(imageFiles);
+      void addFiles(labelFiles);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -115,12 +129,13 @@ export default function VerifyView() {
           const blob = await fetch(url).then((r) => r.blob());
           const name = url.split("/").pop()!;
           const file = new File([blob], name, { type: blob.type || "image/jpeg" });
-          return { name, dataUrl: await fileToDataUrl(file) };
+          const dataUrl = await fileToDataUrl(file);
+          return { name, dataUrl, kind: labelFileKind(dataUrl) };
         })
       );
       setImages(imgs);
     } catch {
-      setError("Could not load the sample label images.");
+      setError("Could not load the sample label files.");
     }
   };
 
@@ -198,15 +213,15 @@ export default function VerifyView() {
         </Card>
 
         <Card>
-          <h2 className="mb-1 text-[15px] font-semibold">Label images</h2>
+          <h2 className="mb-1 text-[15px] font-semibold">Label files</h2>
           <p className="mb-3 text-[12px] text-muted">
-            Up to 4 images of one container — front, back, neck. The government warning is
-            usually on the back label.
+            Up to {MAX_LABEL_FILES} PDFs or images of one container — front, back, neck. The
+            government warning is usually on the back label.
           </p>
           <input
             ref={fileInput}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept={ACCEPTED_LABEL_FILE_TYPES}
             multiple
             className="hidden"
             onChange={(e) => {
@@ -225,18 +240,28 @@ export default function VerifyView() {
             }}
           >
             <ImageIcon />
-            <span className="text-[13px] font-medium">Click, drop, or paste label images</span>
+            <span className="text-[13px] font-medium">Click, drop, or paste label files</span>
           </button>
           {images.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-3">
               {images.map((img, i) => (
                 <div key={img.name + i} className="group relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.dataUrl}
-                    alt={img.name}
-                    className="h-28 rounded-lg border border-line object-contain shadow-card"
-                  />
+                  {img.kind === "pdf" ? (
+                    <div className="flex h-28 w-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-line bg-card px-2 text-center text-ink-2 shadow-card">
+                      <FilePdf size={22} />
+                      <span className="text-[11px] font-semibold uppercase text-accent-red">PDF</span>
+                      <span className="w-full truncate text-[10.5px] text-muted" title={img.name}>
+                        {img.name}
+                      </span>
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={img.dataUrl}
+                      alt={img.name}
+                      className="h-28 rounded-lg border border-line object-contain shadow-card"
+                    />
+                  )}
                   <button
                     type="button"
                     aria-label={`Remove ${img.name}`}
@@ -273,7 +298,7 @@ export default function VerifyView() {
             <Stepper steps={VERIFY_STEPS} current={step} />
             <p className="text-[12px] text-muted" aria-live="polite">
               {step === 0
-                ? "Sending the label images…"
+                ? "Sending the label files…"
                 : step === 1
                   ? "Reading every field printed on the label…"
                   : "Comparing the label against the application…"}
@@ -284,7 +309,7 @@ export default function VerifyView() {
         ) : (
           <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">
             <div className="max-w-[260px] text-[13px] leading-relaxed text-muted">
-              Fill in the application, add the label images, and the match report will appear
+              Fill in the application, add the label files, and the match report will appear
               here — typically in about 5 seconds.
             </div>
           </div>
@@ -292,4 +317,8 @@ export default function VerifyView() {
       </div>
     </div>
   );
+}
+
+function labelFileKind(dataUrl: string): LabelImage["kind"] {
+  return isPdfDataUrl(dataUrl) ? "pdf" : "image";
 }

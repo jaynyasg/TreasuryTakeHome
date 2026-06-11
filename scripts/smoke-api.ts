@@ -79,8 +79,8 @@ async function main(): Promise<void> {
   const badSchema = await post({ application: { brandName: "X" }, imageDataUrls: [] });
   check("schema violation -> 400 ApiError", badSchema.status === 400 && ApiError.safeParse(badSchema.json).success);
 
-  const notImage = await post({ application, imageDataUrls: ["data:text/plain;base64,aGk="] });
-  check("non-image data URL -> 400 ApiError", notImage.status === 400 && ApiError.safeParse(notImage.json).success);
+  const notLabel = await post({ application, imageDataUrls: ["data:text/plain;base64,aGk="] });
+  check("non-label data URL -> 400 ApiError", notLabel.status === 400 && ApiError.safeParse(notLabel.json).success);
 
   process.exit(failures === 0 ? 0 : 1);
 }

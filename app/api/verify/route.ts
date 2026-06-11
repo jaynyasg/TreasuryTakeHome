@@ -7,14 +7,18 @@ import {
 } from "@/lib/contract";
 import { extractLabel, ExtractionError } from "@/lib/extract";
 import { buildMatchReport } from "@/lib/engine/score";
+import { isSupportedLabelDataUrl, MAX_LABEL_FILES } from "@/lib/labelFiles";
 import { z } from "zod";
 
 export const maxDuration = 30;
 
 const VerifyRequest = z.object({
   application: ColaApplication,
-  /** data: URLs of the label set images (front/back/neck of one container). */
-  imageDataUrls: z.array(z.string().startsWith("data:image/")).min(1).max(4),
+  /** data: URLs of the label set files (front/back/neck images or PDFs of one container). */
+  imageDataUrls: z
+    .array(z.string().refine(isSupportedLabelDataUrl, "Expected an image or PDF data URL."))
+    .min(1)
+    .max(MAX_LABEL_FILES),
 });
 
 /**

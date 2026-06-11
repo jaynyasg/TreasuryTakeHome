@@ -8,7 +8,7 @@ import HowItWorks from "@/components/HowItWorks";
 type Tab = "verify" | "generate";
 
 const TABS: Array<{ id: Tab; label: string; hint: string }> = [
-  { id: "verify", label: "Verify a label", hint: "Check label images against a COLA application" },
+  { id: "verify", label: "Verify a label", hint: "Check label files against a COLA application" },
   { id: "generate", label: "Generate test cases", hint: "Mock applications + labels, single or batch" },
 ];
 

@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
+import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import { ExtractedLabel } from "@/lib/contract";
+import { isPdfDataUrl, isSupportedLabelDataUrl } from "@/lib/labelFiles";
 
 /**
  * The LLM seam. The model is an adversary: its output is parsed against the
@@ -12,6 +14,7 @@ const EXTRACTION_PROMPT = `You are a TTB label compliance extraction system. Rea
 
 Rules:
 - Transcribe verbatim. Do NOT correct, complete, or normalize what the label says.
+- For PDFs, ignore COLA application/form/registry pages and extract only from actual product label artwork or container label pages.
 - Use null for any field not visible on the label. NEVER use placeholder text like ".", "-", "N/A", or "none" — null only.
 - classType: the class/type designation — the product style or varietal, e.g. "Kentucky Straight Bourbon Whiskey", "Pinot Gris", "India Pale Ale". A grape varietal on a wine label IS the class/type.
 - fancifulName: a distinctive coined product name that is neither the brand nor the class/type (e.g. "RESERVE FURNACE MOUNTAIN RED"). Most labels have none — null is the common answer.
@@ -48,13 +51,17 @@ export interface ExtractionResult {
 }
 
 /**
- * Extract label fields from a label set (one or more images — front, back,
- * neck — treated as a single label). Accepts data URLs or https URLs.
+ * Extract label fields from a label set (one or more label files — front,
+ * back, neck, or PDF pages — treated as a single label). Accepts image data
+ * URLs, PDF data URLs, or https image URLs.
  * Throws ExtractionError on refusal, truncation, or contract violation.
  */
 export async function extractLabel(imageUrls: string | string[]): Promise<ExtractionResult> {
   const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls];
-  if (urls.length === 0) throw new ExtractionError("No label images provided");
+  if (urls.length === 0) throw new ExtractionError("No label files provided");
+  if (!urls.every(isSupportedModelInputUrl)) {
+    throw new ExtractionError("Only image URLs and PDF data URLs are supported for label extraction");
+  }
   let completion: OpenAI.Chat.Completions.ChatCompletion;
   try {
     completion = await createCompletion(urls);
@@ -78,6 +85,14 @@ export async function extractLabel(imageUrls: string | string[]): Promise<Extrac
 }
 
 function createCompletion(urls: string[]): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const content: ChatCompletionContentPart[] = [
+    {
+      type: "text",
+      text: `Extract the label fields from this label set (${urls.length} file(s) for the same container — e.g. front label, back label, neck label, or a label PDF).`,
+    },
+    ...urls.map(labelInputPart),
+  ];
+
   return getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: 0,
@@ -86,20 +101,31 @@ function createCompletion(urls: string[]): Promise<OpenAI.Chat.Completions.ChatC
       { role: "system", content: EXTRACTION_PROMPT },
       {
         role: "user",
-        content: [
-          {
-            type: "text",
-            text: `Extract the label fields from this label set (${urls.length} image(s) of the same container — e.g. front and back labels).`,
-          },
-          ...urls.map((url) => ({
-            type: "image_url" as const,
-            image_url: { url, detail: "high" as const },
-          })),
-        ],
+        content,
       },
     ],
     response_format: zodResponseFormat(ExtractedLabel, "extracted_label"),
   });
+}
+
+function isSupportedModelInputUrl(url: string): boolean {
+  return isSupportedLabelDataUrl(url) || /^https:\/\//i.test(url);
+}
+
+function labelInputPart(url: string, index: number): ChatCompletionContentPart {
+  if (isPdfDataUrl(url)) {
+    return {
+      type: "file",
+      file: {
+        filename: `label-${index + 1}.pdf`,
+        file_data: url,
+      },
+    };
+  }
+  return {
+    type: "image_url",
+    image_url: { url, detail: "high" },
+  };
 }
 
 function finishExtraction(

@@ -7,6 +7,7 @@ import {
   StageEvent,
   VerifyResponse,
 } from "@/lib/contract";
+import { ensureSupportedDataUrlMime } from "@/lib/labelFiles";
 
 /** Fetch a COLA application from the public registry (live, or cached fixture). */
 export async function fetchColaPrefill(ttbid: string): Promise<ColaPrefillResponse> {
@@ -135,14 +136,30 @@ async function verifyCaseOnce(
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
+    reader.onload = () => resolve(ensureSupportedDataUrlMime(String(reader.result), file));
     reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
     reader.readAsDataURL(file);
   });
 }
 
 /** Rasterize an SVG string to a PNG data URL (generated labels -> real vision pipeline). */
-export function svgToPngDataUrl(svg: string, width = 480, height = 660): Promise<string> {
+export async function svgToPngDataUrl(svg: string, width = 480, height = 660): Promise<string> {
+  const canvas = await svgToCanvas(svg, width, height);
+  return canvas.toDataURL("image/png");
+}
+
+/** Render a generated label to a PDF data URL for the default generated-case artifact. */
+export async function svgToPdfDataUrl(svg: string, width = 480, height = 660): Promise<string> {
+  return fileToDataUrl(new File([await svgToPdfBlob(svg, width, height)], "label.pdf", { type: "application/pdf" }));
+}
+
+export async function svgToPdfBlob(svg: string, width = 480, height = 660): Promise<Blob> {
+  const canvas = await svgToCanvas(svg, width, height);
+  const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.94);
+  return jpegDataUrlToPdfBlob(jpegDataUrl, width, height);
+}
+
+function svgToCanvas(svg: string, width: number, height: number): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
@@ -160,7 +177,7 @@ export function svgToPngDataUrl(svg: string, width = 480, height = 660): Promise
       ctx.scale(2, 2);
       ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/png"));
+      resolve(canvas);
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -168,4 +185,65 @@ export function svgToPngDataUrl(svg: string, width = 480, height = 660): Promise
     };
     img.src = url;
   });
+}
+
+function jpegDataUrlToPdfBlob(jpegDataUrl: string, width: number, height: number): Blob {
+  const image = base64ToBytes(jpegDataUrl.slice(jpegDataUrl.indexOf(",") + 1));
+  const content = ascii(`q\n${width} 0 0 ${height} 0 0 cm\n/Im0 Do\nQ\n`);
+  const parts: Uint8Array[] = [];
+  const offsets: number[] = [];
+  let offset = 0;
+
+  const push = (part: string | Uint8Array) => {
+    const bytes = typeof part === "string" ? ascii(part) : part;
+    parts.push(bytes);
+    offset += bytes.length;
+  };
+  const object = (id: number, body: string | Uint8Array, prefix = "", suffix = "") => {
+    offsets[id] = offset;
+    push(`${id} 0 obj\n${prefix}`);
+    push(body);
+    push(`${suffix}\nendobj\n`);
+  };
+
+  push("%PDF-1.4\n");
+  object(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  object(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  object(
+    3,
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`
+  );
+  object(
+    4,
+    image,
+    `<< /Type /XObject /Subtype /Image /Width ${width * 2} /Height ${height * 2} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.length} >>\nstream\n`,
+    "\nendstream"
+  );
+  object(5, content, `<< /Length ${content.length} >>\nstream\n`, "\nendstream");
+
+  const xrefOffset = offset;
+  push(
+    `xref\n0 6\n0000000000 65535 f \n${[1, 2, 3, 4, 5]
+      .map((id) => `${String(offsets[id]).padStart(10, "0")} 00000 n \n`)
+      .join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+  );
+
+  return new Blob(parts.map(bytesToArrayBuffer), { type: "application/pdf" });
+}
+
+function ascii(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.length);
+  copy.set(bytes);
+  return copy.buffer;
 }

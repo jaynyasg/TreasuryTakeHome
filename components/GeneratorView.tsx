@@ -17,7 +17,7 @@ import {
   OTIUM_APPLICATION,
   SANTA_FE_APPLICATION,
 } from "@/lib/fixtures";
-import { fileToDataUrl, svgToPngDataUrl, verifyCase, VerifyError } from "@/lib/client";
+import { fileToDataUrl, svgToPdfBlob, svgToPdfDataUrl, svgToPngDataUrl, verifyCase, VerifyError } from "@/lib/client";
 
 type RowState =
   | { kind: "idle" }
@@ -76,7 +76,7 @@ function makeRows(startSeed: number, count: number, defects: number, includeReal
 }
 
 async function rowImageDataUrls(row: CaseRow): Promise<string[]> {
-  if (row.svg) return [await svgToPngDataUrl(row.svg)];
+  if (row.svg) return [await svgToPdfDataUrl(row.svg)];
   const urls = row.imageUrls ?? [];
   return Promise.all(
     urls.map(async (url) => {
@@ -215,6 +215,11 @@ export default function GeneratorView() {
     a.click();
   };
 
+  const downloadPdf = async (row: CaseRow) => {
+    if (!row.svg) return;
+    downloadBlob(await svgToPdfBlob(row.svg), `case-${row.id}.pdf`);
+  };
+
   const avg = done.length
     ? Math.round(done.reduce((s, r) => s + (r.state.kind === "done" ? r.state.result.report.matchPercentage : 0), 0) / done.length)
     : null;
@@ -226,8 +231,8 @@ export default function GeneratorView() {
           <div>
             <h2 className="text-[15px] font-semibold">Mock application + label generator</h2>
             <p className="mt-0.5 text-[12px] text-muted">
-              Generated labels are rendered to images and verified through the same vision
-              pipeline as uploaded photos.
+              Generated labels are rendered to PDFs by default and verified through the same
+              pipeline as uploaded files.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -309,7 +314,15 @@ export default function GeneratorView() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((row) => (
-            <CaseCard key={row.id} row={row} running={running} onVerify={verifyOne} onDetail={setDetail} onDownload={downloadPng} />
+            <CaseCard
+              key={row.id}
+              row={row}
+              running={running}
+              onVerify={verifyOne}
+              onDetail={setDetail}
+              onDownloadPng={downloadPng}
+              onDownloadPdf={downloadPdf}
+            />
           ))}
         </div>
       )}
@@ -370,13 +383,15 @@ const CaseCard = memo(function CaseCard({
   running,
   onVerify,
   onDetail,
-  onDownload,
+  onDownloadPng,
+  onDownloadPdf,
 }: {
   row: CaseRow;
   running: boolean;
   onVerify: (row: CaseRow) => Promise<void>;
   onDetail: (row: CaseRow) => void;
-  onDownload: (row: CaseRow) => Promise<void>;
+  onDownloadPng: (row: CaseRow) => Promise<void>;
+  onDownloadPdf: (row: CaseRow) => Promise<void>;
 }) {
   return (
     <Card padded={false} className="overflow-hidden">
@@ -404,7 +419,10 @@ const CaseCard = memo(function CaseCard({
         </div>
         <RowActions row={row} running={running} onVerify={onVerify} onDetail={onDetail} />
         {row.svg && (
-          <Chip onClick={() => void onDownload(row)}>Download PNG</Chip>
+          <div className="flex flex-wrap gap-2">
+            <Chip tone="highlight" onClick={() => void onDownloadPdf(row)}>Download PDF</Chip>
+            <Chip onClick={() => void onDownloadPng(row)}>PNG</Chip>
+          </div>
         )}
       </div>
     </Card>

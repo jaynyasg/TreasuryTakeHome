@@ -29,21 +29,21 @@ Click **Load real example** on the Verify tab to prefill a real approved COLA
 
 - **Verify a label** — enter the application fields (or **prefill from the public COLA
   registry by TTB ID**, labeled live/cached), then upload, drop, or **paste** up to 4
-  images of one container. Match report in ~5 seconds: overall %, per-field
+  PDFs or images of one container. Match report in ~5 seconds: overall %, per-field
   match/mismatch/missing/needs-review, and a plain-English reason for each.
   A "Try a bad photo" chip demos honest needs-review on a perspective-skewed scan.
 - **Generate test cases** — seeded mock application+label pairs, clean or with injected
   defects (wrong ABV, missing warning, title-case "Government Warning:", swapped brand…).
-  Generated labels are rendered to images and verified through the **same vision
-  pipeline** as uploaded photos. Batch at **3–300 cases** (300 confirm-gated with cost
+  Generated labels are rendered to PDFs by default, with PNG downloads still available,
+  and verified through the **same pipeline** as uploaded files. Batch at **3–300 cases** (300 confirm-gated with cost
   and wall-clock computed from measured usage), optionally **mixed with the real COLA
-  label sets and degraded photos**, with progress, cancellation, per-case PNG download,
+  label sets and degraded photos**, with progress, cancellation, per-case PDF/PNG download,
   and an **escaped CSV export** carrying every verdict's reason.
 
 ## How it works
 
 ```
-label images ──> GPT-4o vision (structured output) ──> zod contract gate ─┐
+label files ───> GPT-4o vision (structured output) ──> zod contract gate ─┐
 application ───────────────────────────────────────────────────────────────┴─> deterministic matching engine ──> report
 ```
 

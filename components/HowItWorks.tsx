@@ -20,7 +20,7 @@ export default function HowItWorks() {
           <div className="max-h-[80vh] w-[min(520px,90vw)] space-y-4 overflow-y-auto">
             <h3 className="text-[15px] font-semibold">How verification works</h3>
             <pre className="overflow-x-auto rounded-lg border border-line-2 bg-card p-3 font-mono text-[11px] leading-relaxed text-ink-2">
-{`label images ──▶ GPT-4o vision ──▶ contract gate ──▶ deterministic
+{`label files ───▶ GPT-4o vision ──▶ contract gate ──▶ deterministic
 application ───────────────────────── (zod) ───────▶ matching engine
                                                           │
                               match % + per-field verdict + reason`}

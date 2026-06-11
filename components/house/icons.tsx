@@ -43,6 +43,21 @@ export function Image({ size = 11, ...p }: IconProps) {
   );
 }
 
+export function FilePdf({ size = 12, ...p }: IconProps) {
+  return (
+    <svg {...base(size, p)} fill="none">
+      <path
+        d="M7 3h7l4 4v14H7V3zM14 3v5h4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M8.8 16h6.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M8.8 12.5h6.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function Cube({ size = 12, ...p }: IconProps) {
   return (
     <svg {...base(size, p)} fill="none">
