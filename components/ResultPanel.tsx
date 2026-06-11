@@ -12,6 +12,7 @@ const FIELD_LABELS: Record<FieldKey, string> = {
   countryOfOrigin: "Country of origin",
   wineAppellation: "Appellation",
   wineVintage: "Vintage",
+  grapeVarietals: "Grape varietal(s)",
   governmentWarning: "Government warning",
 };
 

@@ -36,6 +36,78 @@ const cleanLabel: ExtractedLabel = {
   readability: "clear",
 };
 
+describe("2023-edition form support (no ABV/net on application)", () => {
+  const app2023: ColaApplication = {
+    ...application,
+    alcoholContent: undefined,
+    netContents: undefined,
+  };
+
+  it("verifies presence instead of matching when the application omits ABV/net (2023 form)", () => {
+    const report = buildMatchReport(app2023, cleanLabel);
+    expect(report.matchPercentage).toBe(100);
+    expect(report.overall).toBe("all_match");
+    const abv = report.verdicts.find((v) => v.field === "alcoholContent");
+    expect(abv?.status).toBe("match");
+    expect(abv?.reason).toContain("2023");
+    const net = report.verdicts.find((v) => v.field === "netContents");
+    expect(net?.status).toBe("match");
+  });
+
+  it("flags a label with no net contents even without an application value", () => {
+    const report = buildMatchReport(app2023, { ...cleanLabel, netContents: null });
+    const net = report.verdicts.find((v) => v.field === "netContents");
+    expect(net?.status).toBe("missing_on_label");
+  });
+
+  it("flags spirits label missing an alcohol statement (mandatory on label)", () => {
+    const report = buildMatchReport(app2023, { ...cleanLabel, alcoholContent: null });
+    const abv = report.verdicts.find((v) => v.field === "alcoholContent");
+    expect(abv?.status).toBe("missing_on_label");
+  });
+
+  it("treats absent ABV as not_applicable for malt beverages (optional federally)", () => {
+    const maltApp: ColaApplication = {
+      ...app2023,
+      beverageType: "malt_beverage",
+      classType: "India Pale Ale",
+    };
+    const report = buildMatchReport(maltApp, {
+      ...cleanLabel,
+      classType: "India Pale Ale",
+      alcoholContent: null,
+    });
+    const abv = report.verdicts.find((v) => v.field === "alcoholContent");
+    expect(abv?.status).toBe("not_applicable");
+  });
+
+  it("matches declared grape varietals against the label class/type text", () => {
+    const wineApp: ColaApplication = {
+      ...app2023,
+      beverageType: "wine",
+      classType: "Pinot Gris",
+      grapeVarietals: "Pinot Gris",
+    };
+    const wineLabel: ExtractedLabel = { ...cleanLabel, classType: "Pinot Gris" };
+    const report = buildMatchReport(wineApp, wineLabel);
+    const v = report.verdicts.find((x) => x.field === "grapeVarietals");
+    expect(v?.status).toBe("match");
+
+    const wrong = buildMatchReport(
+      { ...wineApp, grapeVarietals: "Chardonnay" },
+      wineLabel
+    );
+    const w = wrong.verdicts.find((x) => x.field === "grapeVarietals");
+    expect(w?.status).toBe("mismatch");
+  });
+
+  it("grapeVarietals is not_applicable when undeclared or non-wine", () => {
+    const report = buildMatchReport(application, cleanLabel);
+    const v = report.verdicts.find((x) => x.field === "grapeVarietals");
+    expect(v?.status).toBe("not_applicable");
+  });
+});
+
 describe("match report scoring (C3)", () => {
   it("scores a fully matching pair at 100% with overall all_match", () => {
     const report = buildMatchReport(application, cleanLabel);

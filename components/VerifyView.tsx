@@ -124,13 +124,12 @@ export default function VerifyView() {
     }
   };
 
+  // ABV/net are optional: 2023-edition forms omit them (presence-only checks).
   const canVerify =
     !busy &&
     images.length > 0 &&
     application.brandName.trim() !== "" &&
     application.classType.trim() !== "" &&
-    application.alcoholContent.trim() !== "" &&
-    application.netContents.trim() !== "" &&
     application.applicantNameAddress.trim() !== "";
 
   const onVerify = async () => {

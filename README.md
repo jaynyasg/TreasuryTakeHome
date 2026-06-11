@@ -96,6 +96,15 @@ review rather than silently passed.
 
 ## Assumptions & trade-offs
 
+- **Form editions**: the provided COLA examples use the 2009-edition Form 5100.31
+  (which states alcohol content and net contents); the current **04/2023 revision**
+  ([Form/f510031.pdf](Form/f510031.pdf)) dropped those boxes and added grape
+  varietal(s). The app supports **both**: fill ABV/net to value-match
+  (2009-style, as in the brief's examples), or leave them blank and the engine
+  verifies label *presence* per 27 CFR instead — which is how TTB actually checks
+  them today. Wine applications can declare varietals, matched against the label's
+  class/type text.
+
 - **Provider**: GPT-4o with structured outputs. The TTB firewall anecdote (Marcus) is
   noted, but the brief asks for a publicly deployed prototype; an on-prem/Azure-OpenAI
   swap is a config change at the single LLM seam.

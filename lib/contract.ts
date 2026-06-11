@@ -9,7 +9,15 @@ import { z } from "zod";
 export const BeverageType = z.enum(["wine", "distilled_spirits", "malt_beverage"]);
 export type BeverageType = z.infer<typeof BeverageType>;
 
-/** Fields of TTB Form 5100.31 that participate in label matching. */
+/**
+ * Fields of TTB Form 5100.31 that participate in label matching.
+ *
+ * Supports both form editions: the 2009-edition form (used by the provided
+ * COLA examples) carries alcoholContent/netContents to match against; the
+ * 04/2023 revision dropped those boxes (and added grape varietals), so they
+ * are optional — when absent, the engine verifies label PRESENCE per
+ * 27 CFR instead of matching values.
+ */
 export const ColaApplication = z.object({
   serialNumber: z.string(),
   beverageType: BeverageType,
@@ -17,14 +25,16 @@ export const ColaApplication = z.object({
   brandName: z.string().min(1),
   fancifulName: z.string().optional(),
   classType: z.string().min(1),
-  /** As written on the form, e.g. "45% Alc./Vol. (90 Proof)" or "12". */
-  alcoholContent: z.string().min(1),
-  /** As written on the form, e.g. "750 MILLILITERS". */
-  netContents: z.string().min(1),
+  /** As written on the form, e.g. "45% Alc./Vol. (90 Proof)" or "12". Absent on 2023-edition forms. */
+  alcoholContent: z.string().min(1).optional(),
+  /** As written on the form, e.g. "750 MILLILITERS". Absent on 2023-edition forms. */
+  netContents: z.string().min(1).optional(),
   applicantNameAddress: z.string().min(1),
   countryOfOrigin: z.string().optional(),
   wineAppellation: z.string().optional(),
   wineVintage: z.string().optional(),
+  /** 2023-edition item 10 (wine only): varietals that appear on the label. */
+  grapeVarietals: z.string().optional(),
 });
 export type ColaApplication = z.infer<typeof ColaApplication>;
 
@@ -60,6 +70,7 @@ export const FieldKey = z.enum([
   "countryOfOrigin",
   "wineAppellation",
   "wineVintage",
+  "grapeVarietals",
   "governmentWarning",
 ]);
 export type FieldKey = z.infer<typeof FieldKey>;

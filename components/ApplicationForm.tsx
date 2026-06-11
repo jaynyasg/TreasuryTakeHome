@@ -77,11 +77,21 @@ export default function ApplicationForm({
       <Field label="Serial number">
         <input className={INPUT} value={value.serialNumber} onChange={(e) => set("serialNumber", e.target.value)} placeholder="100002" />
       </Field>
-      <Field label="Alcohol content">
-        <input className={INPUT} value={value.alcoholContent} onChange={(e) => set("alcoholContent", e.target.value)} placeholder="45% Alc./Vol. (90 Proof)" />
+      <Field label="Alcohol content (2023 forms omit)">
+        <input
+          className={INPUT}
+          value={value.alcoholContent ?? ""}
+          onChange={(e) => set("alcoholContent", e.target.value || undefined)}
+          placeholder="45% Alc./Vol. (90 Proof) — blank: verify presence only"
+        />
       </Field>
-      <Field label="Net contents">
-        <input className={INPUT} value={value.netContents} onChange={(e) => set("netContents", e.target.value)} placeholder="750 MILLILITERS" />
+      <Field label="Net contents (2023 forms omit)">
+        <input
+          className={INPUT}
+          value={value.netContents ?? ""}
+          onChange={(e) => set("netContents", e.target.value || undefined)}
+          placeholder="750 MILLILITERS — blank: verify presence only"
+        />
       </Field>
       <Field label="Applicant name & address (as on permit)" span2>
         <input className={INPUT} value={value.applicantNameAddress} onChange={(e) => set("applicantNameAddress", e.target.value)} placeholder="OLD TOM DISTILLERY, 100 MAIN ST, LOUISVILLE KY 40202" />
@@ -93,6 +103,14 @@ export default function ApplicationForm({
       )}
       {isWine && (
         <>
+          <Field label="Grape varietal(s) (2023 forms, if on label)">
+            <input
+              className={INPUT}
+              value={value.grapeVarietals ?? ""}
+              onChange={(e) => set("grapeVarietals", e.target.value || undefined)}
+              placeholder="Pinot Gris"
+            />
+          </Field>
           <Field label="Appellation (if on label)">
             <input className={INPUT} value={value.wineAppellation ?? ""} onChange={(e) => set("wineAppellation", e.target.value || undefined)} placeholder="LOUDOUN COUNTY VIRGINIA" />
           </Field>

@@ -107,45 +107,84 @@ export function buildMatchReport(
         })()
   );
 
-  // Alcohol content.
-  verdicts.push(
-    label.alcoholContent === null
-      ? absentVerdict("alcoholContent", app.alcoholContent, r, "the alcohol content")
-      : (() => {
-          const c = compareAlcoholContent(app.alcoholContent, label.alcoholContent);
-          return {
-            field: "alcoholContent" as const,
-            status: c.equivalent
-              ? app.alcoholContent === label.alcoholContent
-                ? ("match" as const)
-                : ("close_match" as const)
-              : ("mismatch" as const),
-            applicationValue: app.alcoholContent,
-            labelValue: label.alcoholContent,
-            reason: c.reason,
-          };
-        })()
-  );
+  // Alcohol content. 2009-edition applications state it (match values);
+  // 2023-edition forms dropped the box, so we verify label PRESENCE per
+  // 27 CFR instead (mandatory for wine/spirits; optional for malt beverages).
+  if (app.alcoholContent === undefined) {
+    if (label.alcoholContent !== null) {
+      verdicts.push({
+        field: "alcoholContent",
+        status: "match",
+        applicationValue: null,
+        labelValue: label.alcoholContent,
+        reason:
+          "No expected value on the application (2023-edition form omits it); label states an alcohol content — presence verified.",
+      });
+    } else if (app.beverageType === "malt_beverage") {
+      verdicts.push(
+        notApplicable(
+          "alcoholContent",
+          "Not on the application (2023-edition form) and optional on malt beverage labels federally."
+        )
+      );
+    } else {
+      verdicts.push(absentVerdict("alcoholContent", "(required on label)", r, "the alcohol content"));
+    }
+  } else {
+    verdicts.push(
+      label.alcoholContent === null
+        ? absentVerdict("alcoholContent", app.alcoholContent, r, "the alcohol content")
+        : (() => {
+            const c = compareAlcoholContent(app.alcoholContent, label.alcoholContent);
+            return {
+              field: "alcoholContent" as const,
+              status: c.equivalent
+                ? app.alcoholContent === label.alcoholContent
+                  ? ("match" as const)
+                  : ("close_match" as const)
+                : ("mismatch" as const),
+              applicationValue: app.alcoholContent,
+              labelValue: label.alcoholContent,
+              reason: c.reason,
+            };
+          })()
+    );
+  }
 
-  // Net contents.
-  verdicts.push(
-    label.netContents === null
-      ? absentVerdict("netContents", app.netContents, r, "the net contents")
-      : (() => {
-          const c = compareNetContents(app.netContents, label.netContents);
-          return {
-            field: "netContents" as const,
-            status: c.equivalent
-              ? app.netContents === label.netContents
-                ? ("match" as const)
-                : ("close_match" as const)
-              : ("mismatch" as const),
-            applicationValue: app.netContents,
-            labelValue: label.netContents,
-            reason: c.reason,
-          };
-        })()
-  );
+  // Net contents — same two-edition handling; mandatory on every label.
+  if (app.netContents === undefined) {
+    if (label.netContents !== null) {
+      verdicts.push({
+        field: "netContents",
+        status: "match",
+        applicationValue: null,
+        labelValue: label.netContents,
+        reason:
+          "No expected value on the application (2023-edition form omits it); label states net contents — presence verified.",
+      });
+    } else {
+      verdicts.push(absentVerdict("netContents", "(required on label)", r, "the net contents"));
+    }
+  } else {
+    verdicts.push(
+      label.netContents === null
+        ? absentVerdict("netContents", app.netContents, r, "the net contents")
+        : (() => {
+            const c = compareNetContents(app.netContents, label.netContents);
+            return {
+              field: "netContents" as const,
+              status: c.equivalent
+                ? app.netContents === label.netContents
+                  ? ("match" as const)
+                  : ("close_match" as const)
+                : ("mismatch" as const),
+              applicationValue: app.netContents,
+              labelValue: label.netContents,
+              reason: c.reason,
+            };
+          })()
+    );
+  }
 
   // Producer name & address.
   verdicts.push(
@@ -202,6 +241,43 @@ export function buildMatchReport(
         )
       );
     }
+  }
+
+  // Grape varietals — 2023-edition item 10 (wine only). The varietal appears
+  // on the label as (part of) the class/type or fanciful text, so we check
+  // containment there rather than asking the extractor for a new field.
+  if (app.beverageType === "wine" && app.grapeVarietals) {
+    const labelText = [label.classType, label.fancifulName].filter(Boolean).join(" ");
+    if (!labelText) {
+      verdicts.push(absentVerdict("grapeVarietals", app.grapeVarietals, r, "the grape varietal(s)"));
+    } else {
+      const declared = app.grapeVarietals
+        .split(/,|\band\b|;/i)
+        .map((v) => v.trim())
+        .filter(Boolean);
+      const missing = declared.filter(
+        (v) => !labelText.toLowerCase().includes(v.toLowerCase())
+      );
+      verdicts.push({
+        field: "grapeVarietals",
+        status: missing.length === 0 ? "match" : "mismatch",
+        applicationValue: app.grapeVarietals,
+        labelValue: labelText,
+        reason:
+          missing.length === 0
+            ? "All declared grape varietals appear on the label."
+            : `Declared varietal(s) not found on the label: ${missing.join(", ")}.`,
+      });
+    }
+  } else {
+    verdicts.push(
+      notApplicable(
+        "grapeVarietals",
+        app.beverageType === "wine"
+          ? "No grape varietals declared on the application."
+          : `Not applicable to ${app.beverageType.replace("_", " ")}.`
+      )
+    );
   }
 
   // Government warning — required always, exact.
