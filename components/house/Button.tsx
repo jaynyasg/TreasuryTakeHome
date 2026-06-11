@@ -14,7 +14,7 @@ export default function Button({
       className={
         "group inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-ink px-3 text-[13px] font-medium text-white " +
         "shadow-[0_1px_2px_0_rgb(16_17_26/0.06),inset_0_1px_0_0_rgb(255_255_255/0.1)] " +
-        "transition hover:bg-[#1c1c22] active:scale-[0.985] " +
+        "transition hover:bg-[#2c2620] active:scale-[0.985] " +
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/25 " +
         "disabled:pointer-events-none disabled:opacity-50 " +
         className

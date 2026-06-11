@@ -12,7 +12,7 @@ type IconMotion = "tilt" | "spin3d";
 const VARIANT: Record<Variant, string> = {
   primary:
     "bg-ink text-white shadow-[0_1px_2px_0_rgb(16_17_26/0.06),inset_0_1px_0_0_rgb(255_255_255/0.1)] " +
-    "hover:bg-[#1c1c22] focus-visible:ring-ink/25 disabled:opacity-60",
+    "hover:bg-[#2c2620] focus-visible:ring-ink/25 disabled:opacity-60",
   secondary:
     "border border-line bg-card text-ink-2 hover:border-accent/40 hover:bg-surface hover:text-ink " +
     "focus-visible:ring-accent/40 disabled:text-muted-2 disabled:opacity-60",
