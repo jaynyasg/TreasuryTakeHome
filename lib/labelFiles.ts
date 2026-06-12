@@ -1,5 +1,6 @@
 export const MAX_LABEL_FILES = 4;
-export const ACCEPTED_LABEL_FILE_TYPES = "image/png,image/jpeg,image/webp,application/pdf";
+export const MAX_LABEL_UPLOAD_BYTES = 3 * 1024 * 1024;
+export const ACCEPTED_LABEL_FILE_TYPES = ".pdf,.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp,application/pdf";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -40,6 +41,11 @@ export function inferSupportedLabelMime(file: Pick<File, "name" | "type">): stri
 
 export function isSupportedLabelFile(file: Pick<File, "name" | "type">): boolean {
   return inferSupportedLabelMime(file) !== null;
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function ensureSupportedDataUrlMime(dataUrl: string, file: Pick<File, "name" | "type">): string {

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCEPTED_LABEL_FILE_TYPES,
   ensureSupportedDataUrlMime,
+  formatBytes,
   inferSupportedLabelMime,
   isSupportedLabelDataUrl,
   isSupportedLabelFile,
+  MAX_LABEL_UPLOAD_BYTES,
 } from "@/lib/labelFiles";
 
 describe("label file helpers", () => {
@@ -27,5 +30,10 @@ describe("label file helpers", () => {
     expect(ensureSupportedDataUrlMime("data:;base64,aGk=", { name: "label.pdf", type: "" })).toBe(
       "data:application/pdf;base64,aGk="
     );
+  });
+
+  it("advertises PDF extensions and formats the upload limit", () => {
+    expect(ACCEPTED_LABEL_FILE_TYPES).toContain(".pdf");
+    expect(formatBytes(MAX_LABEL_UPLOAD_BYTES)).toBe("3.0 MB");
   });
 });

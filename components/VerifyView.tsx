@@ -14,9 +14,11 @@ import { OTIUM_APPLICATION, OTIUM_TTB_ID } from "@/lib/fixtures";
 import { fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
 import {
   ACCEPTED_LABEL_FILE_TYPES,
+  formatBytes,
   isPdfDataUrl,
   isSupportedLabelFile,
   MAX_LABEL_FILES,
+  MAX_LABEL_UPLOAD_BYTES,
 } from "@/lib/labelFiles";
 
 /** Steps mirror the real pipeline; advancement is driven by server stage events. */
@@ -49,6 +51,7 @@ interface LabelImage {
   name: string;
   dataUrl: string;
   kind: "image" | "pdf";
+  size: number;
 }
 
 export default function VerifyView() {
@@ -88,13 +91,26 @@ export default function VerifyView() {
         setError("Add a PDF, PNG, JPEG, or WebP label file.");
         return;
       }
+      const remainingSlots = MAX_LABEL_FILES - images.length;
+      if (remainingSlots <= 0) {
+        setError(`Remove a label file before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
+        return;
+      }
+      const nextFiles = supported.slice(0, remainingSlots);
+      const totalBytes =
+        images.reduce((sum, file) => sum + file.size, 0) +
+        nextFiles.reduce((sum, file) => sum + file.size, 0);
+      if (totalBytes > MAX_LABEL_UPLOAD_BYTES) {
+        setError(
+          `Selected label files total ${formatBytes(totalBytes)}. Use a PDF or image set under ${formatBytes(MAX_LABEL_UPLOAD_BYTES)}.`
+        );
+        return;
+      }
       const added = await Promise.all(
-        supported
-          .slice(0, MAX_LABEL_FILES - images.length)
-          .map(async (f) => {
-            const dataUrl = await fileToDataUrl(f);
-            return { name: f.name, dataUrl, kind: labelFileKind(dataUrl) };
-          })
+        nextFiles.map(async (f) => {
+          const dataUrl = await fileToDataUrl(f);
+          return { name: f.name, dataUrl, kind: labelFileKind(dataUrl), size: f.size };
+        })
       );
       setImages((prev) => [...prev, ...added].slice(0, MAX_LABEL_FILES));
     } catch (err) {
@@ -130,7 +146,7 @@ export default function VerifyView() {
           const name = url.split("/").pop()!;
           const file = new File([blob], name, { type: blob.type || "image/jpeg" });
           const dataUrl = await fileToDataUrl(file);
-          return { name, dataUrl, kind: labelFileKind(dataUrl) };
+          return { name, dataUrl, kind: labelFileKind(dataUrl), size: file.size };
         })
       );
       setImages(imgs);
@@ -146,6 +162,12 @@ export default function VerifyView() {
     application.brandName.trim() !== "" &&
     application.classType.trim() !== "" &&
     application.applicantNameAddress.trim() !== "";
+  const verifyDisabledReason =
+    busy || canVerify
+      ? null
+      : images.length === 0
+        ? "Add a PDF or image label file to verify."
+        : "Complete brand, class/type, and applicant fields to verify.";
 
   const onVerify = async () => {
     setBusy(true);
@@ -283,6 +305,9 @@ export default function VerifyView() {
             >
               {busy ? "Verifying…" : "Verify label"}
             </IconButton>
+            {verifyDisabledReason && (
+              <p className="mt-2 text-[11.5px] text-muted">{verifyDisabledReason}</p>
+            )}
           </div>
           {error && (
             <p className="mt-3 rounded-lg border border-accent-red/30 bg-accent-red/5 px-3 py-2 text-[12.5px] text-accent-red">
