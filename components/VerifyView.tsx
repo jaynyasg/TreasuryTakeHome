@@ -11,7 +11,7 @@ import ResultPanel from "@/components/ResultPanel";
 import Badge from "@/components/house/Badge";
 import { ColaApplication, VerifyResponse } from "@/lib/contract";
 import { OTIUM_APPLICATION, OTIUM_TTB_ID } from "@/lib/fixtures";
-import { fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
+import { extractApplicationFromPdfs, fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
 import {
   ACCEPTED_LABEL_FILE_TYPES,
   formatBytes,
@@ -57,7 +57,7 @@ interface LabelImage {
 export default function VerifyView() {
   const [application, setApplication] = useState<ColaApplication>(EMPTY_APPLICATION);
   const [images, setImages] = useState<LabelImage[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"application" | "verify" | null>(null);
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VerifyResponse | null>(null);
@@ -167,24 +167,40 @@ export default function VerifyView() {
       : "Add a PDF or image label file to verify.";
 
   const onVerify = async () => {
+    let applicationForVerify = application;
     if (!applicationReady) {
-      setError("Complete brand, class/type, and applicant fields before verifying.");
-      return;
+      const pdfs = images.filter((img) => img.kind === "pdf").map((img) => img.dataUrl);
+      if (pdfs.length === 0) {
+        setError("Complete brand, class/type, and applicant fields before verifying.");
+        return;
+      }
+      setBusy("application");
+      setStep(0);
+      setError(null);
+      setResult(null);
+      try {
+        applicationForVerify = await extractApplicationFromPdfs(pdfs);
+        setApplication(applicationForVerify);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not extract the application from the PDF.");
+        setBusy(null);
+        return;
+      }
     }
-    setBusy(true);
+    setBusy("verify");
     setStep(0);
     setError(null);
     setResult(null);
     try {
       setResult(
-        await verifyCase(application, images.map((i) => i.dataUrl), (stage) =>
+        await verifyCase(applicationForVerify, images.map((i) => i.dataUrl), (stage) =>
           setStep(stage === "extracting" ? 1 : 2)
         )
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -298,14 +314,18 @@ export default function VerifyView() {
             </div>
           )}
           <div className="mt-4">
-            <IconButton
-              icon={<Sparkles />}
-              loading={busy}
-              disabled={!canAttemptVerify}
-              onClick={() => void onVerify()}
-            >
-              {busy ? "Verifying…" : "Verify label"}
-            </IconButton>
+              <IconButton
+                icon={<Sparkles />}
+                loading={busy !== null}
+                disabled={!canAttemptVerify}
+                onClick={() => void onVerify()}
+              >
+                {busy === "application"
+                  ? "Reading PDF…"
+                  : busy === "verify"
+                    ? "Verifying…"
+                    : "Verify label"}
+              </IconButton>
             {verifyDisabledReason && (
               <p className="mt-2 text-[11.5px] text-muted">{verifyDisabledReason}</p>
             )}
@@ -323,7 +343,9 @@ export default function VerifyView() {
           <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-card border border-dashed border-line bg-surface/40 px-4 text-center">
             <Stepper steps={VERIFY_STEPS} current={step} />
             <p className="text-[12px] text-muted" aria-live="polite">
-              {step === 0
+              {busy === "application"
+                ? "Reading application fields from the uploaded PDF…"
+                : step === 0
                 ? "Sending the label files…"
                 : step === 1
                   ? "Reading every field printed on the label…"

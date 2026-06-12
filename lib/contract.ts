@@ -147,6 +147,17 @@ export const ColaPrefillResponse = z.object({
 });
 export type ColaPrefillResponse = z.infer<typeof ColaPrefillResponse>;
 
+/** API: POST /api/extract-application response. */
+export const ApplicationExtractResponse = z.object({
+  ok: z.literal(true),
+  application: ColaApplication,
+  /** Model token usage for measured cost estimates. */
+  usage: z
+    .object({ inputTokens: z.number(), outputTokens: z.number() })
+    .optional(),
+});
+export type ApplicationExtractResponse = z.infer<typeof ApplicationExtractResponse>;
+
 /** A generated mock application + matching (or deliberately flawed) label spec. */
 export const GeneratedCase = z.object({
   application: ColaApplication,

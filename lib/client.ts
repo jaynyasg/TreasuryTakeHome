@@ -2,6 +2,7 @@
 
 import {
   ApiError,
+  ApplicationExtractResponse,
   ColaApplication,
   ColaPrefillResponse,
   StageEvent,
@@ -20,6 +21,28 @@ export async function fetchColaPrefill(ttbid: string): Promise<ColaPrefillRespon
   const parsed = ColaPrefillResponse.safeParse(json);
   if (!parsed.success) throw new Error("Server response violated the contract.");
   return parsed.data;
+}
+
+/** Extract Form 5100.31 fields from uploaded COLA PDFs. */
+export async function extractApplicationFromPdfs(fileDataUrls: string[]): Promise<ColaApplication> {
+  let res: Response;
+  try {
+    res = await fetch("/api/extract-application", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileDataUrls }),
+    });
+  } catch {
+    throw new Error("Network error — could not reach the server.");
+  }
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = ApiError.safeParse(json);
+    throw new Error(err.success ? err.data.error : `Application extraction failed (${res.status})`);
+  }
+  const parsed = ApplicationExtractResponse.safeParse(json);
+  if (!parsed.success) throw new Error("Server response violated the contract.");
+  return parsed.data.application;
 }
 
 export type VerifyStage = StageEvent["stage"];
