@@ -156,20 +156,21 @@ export default function VerifyView() {
   };
 
   // ABV/net are optional: 2023-edition forms omit them (presence-only checks).
-  const canVerify =
-    !busy &&
-    images.length > 0 &&
+  const applicationReady =
     application.brandName.trim() !== "" &&
     application.classType.trim() !== "" &&
     application.applicantNameAddress.trim() !== "";
+  const canAttemptVerify = !busy && images.length > 0;
   const verifyDisabledReason =
-    busy || canVerify
+    busy || canAttemptVerify
       ? null
-      : images.length === 0
-        ? "Add a PDF or image label file to verify."
-        : "Complete brand, class/type, and applicant fields to verify.";
+      : "Add a PDF or image label file to verify.";
 
   const onVerify = async () => {
+    if (!applicationReady) {
+      setError("Complete brand, class/type, and applicant fields before verifying.");
+      return;
+    }
     setBusy(true);
     setStep(0);
     setError(null);
@@ -300,7 +301,7 @@ export default function VerifyView() {
             <IconButton
               icon={<Sparkles />}
               loading={busy}
-              disabled={!canVerify}
+              disabled={!canAttemptVerify}
               onClick={() => void onVerify()}
             >
               {busy ? "Verifying…" : "Verify label"}
