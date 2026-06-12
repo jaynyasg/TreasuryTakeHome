@@ -30,8 +30,8 @@ function goldenApp(id: string): unknown {
  */
 describe("real-sample fixtures stay in sync (T12)", () => {
   it("all fixtures are schema-valid", () => {
-    for (const app of [OTIUM_APPLICATION, SANTA_FE_APPLICATION, EIGHT_CHAINS_APPLICATION]) {
-      expect(() => ColaApplication.parse(app)).not.toThrow();
+    for (const example of REAL_EXAMPLES) {
+      expect(() => ColaApplication.parse(example.application), example.id).not.toThrow();
     }
   });
 
@@ -54,7 +54,22 @@ describe("real-sample fixtures stay in sync (T12)", () => {
           fs.existsSync(path.join(__dirname, "..", "eval", "images", img)),
           `${ex.id}: ${img}`
         ).toBe(true);
+        expect(
+          fs.existsSync(path.join(__dirname, "..", "public", "samples", img)) ||
+            fs.existsSync(path.join(__dirname, "..", "public", "samples", publicSampleName(img))),
+          `${ex.id}: public sample for ${img}`
+        ).toBe(true);
       }
     }
   });
 });
+
+function publicSampleName(image: string): string {
+  const aliases: Record<string, string> = {
+    "labelexample1_p2_0.jpg": "otium-front.jpg",
+    "labelexample1_p3_1.jpg": "otium-back.jpg",
+    "labelexample2_p2_0.jpg": "santa-fe.jpg",
+    "labelexample3_p2_0.jpg": "eight-chains.jpg",
+  };
+  return aliases[image] ?? image;
+}

@@ -13,8 +13,8 @@ import { generateCase } from "@/lib/engine/generator";
 import { renderLabelSvg } from "@/lib/labelSvg";
 import { buildBatchCsv } from "@/lib/csv";
 import {
-  EIGHT_CHAINS_APPLICATION,
   OTIUM_APPLICATION,
+  REAL_EXAMPLES,
   SANTA_FE_APPLICATION,
 } from "@/lib/fixtures";
 import { fileToDataUrl, svgToPdfBlob, svgToPdfDataUrl, svgToPngDataUrl, verifyCase, VerifyError } from "@/lib/client";
@@ -47,10 +47,24 @@ const USD_PER_OUTPUT_TOKEN = 10 / 1e6;
 const COMPACT_THRESHOLD = 25;
 
 /** Real label sets + deliberately bad photos of them — mixed into batches so the run isn't purely self-generated. */
+const SAMPLE_URL_BY_IMAGE: Record<string, string> = {
+  "labelexample1_p2_0.jpg": "/samples/otium-front.jpg",
+  "labelexample1_p3_1.jpg": "/samples/otium-back.jpg",
+  "labelexample2_p2_0.jpg": "/samples/santa-fe.jpg",
+  "labelexample3_p2_0.jpg": "/samples/eight-chains.jpg",
+};
+
+function sampleUrls(images: string[]): string[] {
+  return images.map((image) => SAMPLE_URL_BY_IMAGE[image] ?? `/samples/${image}`);
+}
+
 const REAL_MIX: Array<Pick<CaseRow, "id" | "source" | "application" | "imageUrls">> = [
-  { id: "real-otium", source: "real", application: OTIUM_APPLICATION, imageUrls: ["/samples/otium-front.jpg", "/samples/otium-back.jpg"] },
-  { id: "real-santa-fe", source: "real", application: SANTA_FE_APPLICATION, imageUrls: ["/samples/santa-fe.jpg"] },
-  { id: "real-eight-chains", source: "real", application: EIGHT_CHAINS_APPLICATION, imageUrls: ["/samples/eight-chains.jpg"] },
+  ...REAL_EXAMPLES.map((example) => ({
+    id: example.id,
+    source: "real" as const,
+    application: example.application,
+    imageUrls: sampleUrls(example.images),
+  })),
   { id: "degraded-perspective-otium", source: "degraded", application: OTIUM_APPLICATION, imageUrls: ["/samples/degraded-otium-front.jpg", "/samples/degraded-otium-back.jpg"] },
   { id: "degraded-glare-santa-fe", source: "degraded", application: SANTA_FE_APPLICATION, imageUrls: ["/samples/degraded-glare-santa-fe.jpg"] },
 ];
