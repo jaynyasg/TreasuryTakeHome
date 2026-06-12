@@ -2,9 +2,9 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import { ColaApplication } from "@/lib/contract";
-import { isPdfDataUrl } from "@/lib/labelFiles";
+import { isPdfDataUrl, isSupportedLabelDataUrl } from "@/lib/labelFiles";
 
-const APPLICATION_PROMPT = `You are a TTB COLA application extraction system. Read uploaded TTB Form 5100.31 / COLA PDFs and extract the application fields used for label verification.
+const APPLICATION_PROMPT = `You are a TTB COLA application extraction system. Read uploaded TTB Form 5100.31 / COLA application files and extract the application fields used for label verification.
 
 Rules:
 - Extract from the COLA application/certificate/form pages, not from label artwork unless a form field is absent and the label is the only visible source.
@@ -39,13 +39,13 @@ export interface ApplicationExtractionResult {
   usage: { inputTokens: number; outputTokens: number };
 }
 
-export async function extractApplicationFromPdf(
+export async function extractApplicationFromFiles(
   fileDataUrls: string | string[]
 ): Promise<ApplicationExtractionResult> {
   const urls = Array.isArray(fileDataUrls) ? fileDataUrls : [fileDataUrls];
-  if (urls.length === 0) throw new ApplicationExtractionError("No application PDFs provided");
-  if (!urls.every(isPdfDataUrl)) {
-    throw new ApplicationExtractionError("Only PDF data URLs are supported for application extraction");
+  if (urls.length === 0) throw new ApplicationExtractionError("No application files provided");
+  if (!urls.every(isSupportedLabelDataUrl)) {
+    throw new ApplicationExtractionError("Only PDF or image data URLs are supported for application extraction");
   }
 
   let completion: OpenAI.Chat.Completions.ChatCompletion;
@@ -61,9 +61,9 @@ export async function extractApplicationFromPdf(
           content: [
             {
               type: "text",
-              text: `Extract the COLA application fields from ${urls.length} uploaded PDF file(s).`,
+              text: `Extract the COLA application fields from ${urls.length} uploaded file(s).`,
             },
-            ...urls.map(pdfPart),
+            ...urls.map(applicationPart),
           ],
         },
       ],
@@ -87,7 +87,19 @@ export async function extractApplicationFromPdf(
   return finishExtraction(completion);
 }
 
-function pdfPart(url: string, index: number): ChatCompletionContentPart {
+export async function extractApplicationFromPdf(
+  fileDataUrls: string | string[]
+): Promise<ApplicationExtractionResult> {
+  return extractApplicationFromFiles(fileDataUrls);
+}
+
+function applicationPart(url: string, index: number): ChatCompletionContentPart {
+  if (!isPdfDataUrl(url)) {
+    return {
+      type: "image_url",
+      image_url: { url, detail: "high" },
+    };
+  }
   return {
     type: "file",
     file: {

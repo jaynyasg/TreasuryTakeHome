@@ -11,11 +11,10 @@ import ResultPanel from "@/components/ResultPanel";
 import Badge from "@/components/house/Badge";
 import { ColaApplication, VerifyResponse } from "@/lib/contract";
 import { OTIUM_APPLICATION, OTIUM_TTB_ID } from "@/lib/fixtures";
-import { extractApplicationFromPdfs, fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
+import { extractApplicationFromFiles, fetchColaPrefill, fileToDataUrl, verifyCase } from "@/lib/client";
 import {
   ACCEPTED_LABEL_FILE_TYPES,
   formatBytes,
-  inferSupportedLabelMime,
   isPdfDataUrl,
   isSupportedLabelFile,
   MAX_LABEL_FILES,
@@ -61,7 +60,6 @@ type FullPdfState =
   | { kind: "error"; message: string };
 
 interface FullPdfRow extends LabelFile {
-  kind: "pdf";
   state: FullPdfState;
 }
 
@@ -142,32 +140,30 @@ export default function VerifyView() {
     if (!files) return;
     setFullError(null);
     try {
-      const pdfs = Array.from(files).filter((file) => inferSupportedLabelMime(file) === "application/pdf");
-      if (pdfs.length === 0) {
-        setFullError("Add one or more complete COLA application PDFs.");
+      const supported = Array.from(files).filter(isSupportedLabelFile);
+      if (supported.length === 0) {
+        setFullError("Add one or more complete COLA application PDFs or images.");
         return;
       }
       const remainingSlots = MAX_LABEL_FILES - fullPdfRows.length;
       if (remainingSlots <= 0) {
-        setFullError(`Remove a PDF before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
+        setFullError(`Remove an application file before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
         return;
       }
-      const nextFiles = pdfs.slice(0, remainingSlots);
+      const nextFiles = supported.slice(0, remainingSlots);
       const oversized = nextFiles.find((file) => file.size > MAX_LABEL_UPLOAD_BYTES);
       if (oversized) {
-        setFullError(`${oversized.name} is ${formatBytes(oversized.size)}. Use PDFs under ${formatBytes(MAX_LABEL_UPLOAD_BYTES)} each.`);
+        setFullError(`${oversized.name} is ${formatBytes(oversized.size)}. Use application files under ${formatBytes(MAX_LABEL_UPLOAD_BYTES)} each.`);
         return;
       }
-      const added = (await Promise.all(nextFiles.map(readLabelFile))).filter(
-        (file): file is LabelFile & { kind: "pdf" } => file.kind === "pdf"
-      );
+      const added = await Promise.all(nextFiles.map(readLabelFile));
       setFullPdfRows((prev) =>
         [...prev, ...added.map((file) => ({ ...file, state: { kind: "idle" as const } }))].slice(0, MAX_LABEL_FILES)
       );
       setActiveFullId((prev) => prev ?? added[0]?.id ?? null);
       setActiveResult("full");
     } catch (err) {
-      setFullError(err instanceof Error ? err.message : "Could not read the PDF.");
+      setFullError(err instanceof Error ? err.message : "Could not read the application file.");
     }
   };
 
@@ -213,7 +209,7 @@ export default function VerifyView() {
       return;
     }
     if (!applicationReady) {
-      setManualError("Complete brand, class/type, and applicant fields first, or use Full COLA PDFs below.");
+      setManualError("Complete brand, class/type, and applicant fields first, or use Full COLA Applications below.");
       return;
     }
     setManualBusy(true);
@@ -236,7 +232,7 @@ export default function VerifyView() {
 
   const verifyFullPdfs = async () => {
     if (fullPdfRows.length === 0) {
-      setFullError("Add one or more complete COLA application PDFs.");
+      setFullError("Add one or more complete COLA application files.");
       return;
     }
     setFullBusy(true);
@@ -247,7 +243,7 @@ export default function VerifyView() {
       setRowState(row.id, { kind: "running" });
       setActiveFullId(row.id);
       try {
-        const extractedApplication = await extractApplicationFromPdfs([row.dataUrl]);
+        const extractedApplication = await extractApplicationFromFiles([row.dataUrl]);
         const result = await verifyCase(extractedApplication, [row.dataUrl]);
         setRowState(row.id, { kind: "done", application: extractedApplication, result });
       } catch (err) {
@@ -361,22 +357,22 @@ export default function VerifyView() {
 
         <Card>
           <div className="mb-3">
-            <h2 className="text-[15px] font-semibold">Full COLA PDFs</h2>
+            <h2 className="text-[15px] font-semibold">Full COLA Applications</h2>
             <p className="mt-0.5 text-[12px] text-muted">
-              Upload complete application PDFs here. Each PDF is read and verified as its own case.
+              Upload complete application PDFs or image scans here. Each file is read and verified as its own case.
             </p>
           </div>
           <FileUploadBox
             inputRef={fullPdfInput}
-            accept=".pdf,application/pdf"
-            label="Click or drop complete COLA PDFs"
+            accept={ACCEPTED_LABEL_FILE_TYPES}
+            label="Click or drop complete COLA application files"
             onFiles={addFullPdfs}
           />
           {fullPdfRows.length > 0 && (
             <ul className="mt-3 divide-y divide-line-2 rounded-lg border border-line-2">
               {fullPdfRows.map((row) => (
                 <li key={row.id} className="flex items-center gap-3 px-3 py-2.5">
-                  <FilePdf size={18} />
+                  <FileKindIcon kind={row.kind} />
                   <button
                     type="button"
                     onClick={() => {
@@ -410,13 +406,13 @@ export default function VerifyView() {
               onClick={() => void verifyFullPdfs()}
             >
               {fullBusy
-                ? "Verifying PDFs..."
+                ? "Verifying applications..."
                 : fullPdfRows.length > 0
-                  ? `Verify ${fullPdfRows.length} full PDF${fullPdfRows.length === 1 ? "" : "s"}`
-                  : "Verify full PDFs"}
+                  ? `Verify ${fullPdfRows.length} full application${fullPdfRows.length === 1 ? "" : "s"}`
+                  : "Verify full applications"}
             </IconButton>
             {fullPdfRows.length === 0 && (
-              <p className="mt-2 text-[11.5px] text-muted">Use this for one or more complete COLA application PDFs.</p>
+              <p className="mt-2 text-[11.5px] text-muted">Use this for complete COLA application PDFs or image scans.</p>
             )}
           </div>
           {fullError && (
@@ -470,7 +466,7 @@ function EmptyResults() {
   return (
     <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">
       <div className="max-w-[280px] text-[13px] leading-relaxed text-muted">
-        Verify an application + label set, or upload full COLA PDFs, and results will appear here.
+        Verify an application + label set, or upload full COLA applications, and results will appear here.
       </div>
     </div>
   );
@@ -494,7 +490,7 @@ function FullPdfResults({
     <div className="space-y-4">
       <Card>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">Full PDF results</h2>
+          <h2 className="text-[15px] font-semibold">Full application results</h2>
           <span className="text-[12px] text-muted">
             {done}/{rows.length} complete{errors ? ` · ${errors} failed` : ""}
           </span>
@@ -512,7 +508,7 @@ function FullPdfResults({
                     : "border-line-2 bg-card hover:border-accent/35 hover:bg-surface")
                 }
               >
-                <FilePdf size={18} />
+                <FileKindIcon kind={row.kind} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[12.5px] font-medium text-ink-2">{row.name}</span>
                   <span className="block truncate text-[11.5px] text-muted">
@@ -543,11 +539,15 @@ function FullPdfResults({
         </div>
       ) : (
         <div className="flex min-h-[220px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center text-[13px] text-muted">
-          Select Verify full PDFs to process this file.
+          Select Verify full applications to process this file.
         </div>
       )}
     </div>
   );
+}
+
+function FileKindIcon({ kind }: { kind: LabelFile["kind"] }) {
+  return kind === "pdf" ? <FilePdf size={18} /> : <ImageIcon size={18} />;
 }
 
 function FullRowStatus({ row }: { row: FullPdfRow }) {

@@ -23,8 +23,8 @@ export async function fetchColaPrefill(ttbid: string): Promise<ColaPrefillRespon
   return parsed.data;
 }
 
-/** Extract Form 5100.31 fields from uploaded COLA PDFs. */
-export async function extractApplicationFromPdfs(fileDataUrls: string[]): Promise<ColaApplication> {
+/** Extract Form 5100.31 fields from uploaded COLA application files. */
+export async function extractApplicationFromFiles(fileDataUrls: string[]): Promise<ColaApplication> {
   let res: Response;
   try {
     res = await fetch("/api/extract-application", {
@@ -44,6 +44,8 @@ export async function extractApplicationFromPdfs(fileDataUrls: string[]): Promis
   if (!parsed.success) throw new Error("Server response violated the contract.");
   return parsed.data.application;
 }
+
+export const extractApplicationFromPdfs = extractApplicationFromFiles;
 
 export type VerifyStage = StageEvent["stage"];
 

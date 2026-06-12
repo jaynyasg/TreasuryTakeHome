@@ -28,9 +28,9 @@ Click **Load real example** on the Verify tab to prefill a real approved COLA
 ## What it does
 
 - **Verify a label** — two clear workflows: enter/prefill the application fields and
-  attach the matching label files, or upload up to 4 complete COLA PDFs in the separate
-  full-form section. Each full PDF is read and verified as its own case, so multi-PDF
-  uploads produce multiple results instead of one merged report. Match report in ~5
+  attach the matching label files, or upload up to 4 complete COLA application files
+  in the separate full-form section. Each full application file is read and verified
+  as its own case, so multi-file uploads produce multiple results instead of one merged report. Match report in ~5
   seconds: overall %, per-field match/mismatch/missing/needs-review, and a plain-English
   reason for each.
   A "Try a bad photo" chip demos honest needs-review on a perspective-skewed scan.
