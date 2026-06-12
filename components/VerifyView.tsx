@@ -15,13 +15,13 @@ import { extractApplicationFromPdfs, fetchColaPrefill, fileToDataUrl, verifyCase
 import {
   ACCEPTED_LABEL_FILE_TYPES,
   formatBytes,
+  inferSupportedLabelMime,
   isPdfDataUrl,
   isSupportedLabelFile,
   MAX_LABEL_FILES,
   MAX_LABEL_UPLOAD_BYTES,
 } from "@/lib/labelFiles";
 
-/** Steps mirror the real pipeline; advancement is driven by server stage events. */
 const VERIFY_STEPS = [
   { label: "Upload", icon: <ImageIcon /> },
   { label: "Read label", icon: <Sparkles /> },
@@ -41,84 +41,137 @@ const EMPTY_APPLICATION: ColaApplication = {
 
 const SAMPLE_APPLICATION = OTIUM_APPLICATION;
 const SAMPLE_IMAGES = ["/samples/otium-front.jpg", "/samples/otium-back.jpg"];
-/** Same COLA, photographed badly (perspective skew) — demos honest needs_review. */
 const DEGRADED_SAMPLE_IMAGES = [
   "/samples/degraded-otium-front.jpg",
   "/samples/degraded-otium-back.jpg",
 ];
 
-interface LabelImage {
+interface LabelFile {
+  id: string;
   name: string;
   dataUrl: string;
   kind: "image" | "pdf";
   size: number;
 }
 
+type FullPdfState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "done"; application: ColaApplication; result: VerifyResponse }
+  | { kind: "error"; message: string };
+
+interface FullPdfRow extends LabelFile {
+  kind: "pdf";
+  state: FullPdfState;
+}
+
+type ActiveResult = "manual" | "full";
+
 export default function VerifyView() {
   const [application, setApplication] = useState<ColaApplication>(EMPTY_APPLICATION);
-  const [images, setImages] = useState<LabelImage[]>([]);
-  const [busy, setBusy] = useState<"application" | "verify" | null>(null);
+  const [manualFiles, setManualFiles] = useState<LabelFile[]>([]);
+  const [fullPdfRows, setFullPdfRows] = useState<FullPdfRow[]>([]);
+  const [manualBusy, setManualBusy] = useState(false);
+  const [fullBusy, setFullBusy] = useState(false);
   const [step, setStep] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<VerifyResponse | null>(null);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [fullError, setFullError] = useState<string | null>(null);
+  const [manualResult, setManualResult] = useState<VerifyResponse | null>(null);
+  const [activeResult, setActiveResult] = useState<ActiveResult>("manual");
+  const [activeFullId, setActiveFullId] = useState<string | null>(null);
   const [ttbId, setTtbId] = useState("");
   const [colaBusy, setColaBusy] = useState(false);
   const [colaSource, setColaSource] = useState<"live" | "cached" | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const manualFileInput = useRef<HTMLInputElement>(null);
+  const fullPdfInput = useRef<HTMLInputElement>(null);
+
+  const applicationReady =
+    application.brandName.trim() !== "" &&
+    application.classType.trim() !== "" &&
+    application.applicantNameAddress.trim() !== "";
 
   const prefillFromRegistry = async (id: string) => {
     setColaBusy(true);
     setColaSource(null);
-    setError(null);
+    setManualError(null);
     try {
       const prefill = await fetchColaPrefill(id.trim());
       setApplication(prefill.application);
       setColaSource(prefill.source);
       setTtbId(prefill.ttbid);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registry lookup failed.");
+      setManualError(err instanceof Error ? err.message : "Registry lookup failed.");
     } finally {
       setColaBusy(false);
     }
   };
 
-  const addFiles = async (files: FileList | File[] | null) => {
+  const addManualFiles = async (files: FileList | File[] | null) => {
     if (!files) return;
-    setError(null);
+    setManualError(null);
     try {
       const supported = Array.from(files).filter(isSupportedLabelFile);
       if (supported.length === 0) {
-        setError("Add a PDF, PNG, JPEG, or WebP label file.");
+        setManualError("Add a PDF, PNG, JPEG, or WebP label file.");
         return;
       }
-      const remainingSlots = MAX_LABEL_FILES - images.length;
+      const remainingSlots = MAX_LABEL_FILES - manualFiles.length;
       if (remainingSlots <= 0) {
-        setError(`Remove a label file before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
+        setManualError(`Remove a label file before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
         return;
       }
       const nextFiles = supported.slice(0, remainingSlots);
       const totalBytes =
-        images.reduce((sum, file) => sum + file.size, 0) +
+        manualFiles.reduce((sum, file) => sum + file.size, 0) +
         nextFiles.reduce((sum, file) => sum + file.size, 0);
       if (totalBytes > MAX_LABEL_UPLOAD_BYTES) {
-        setError(
+        setManualError(
           `Selected label files total ${formatBytes(totalBytes)}. Use a PDF or image set under ${formatBytes(MAX_LABEL_UPLOAD_BYTES)}.`
         );
         return;
       }
-      const added = await Promise.all(
-        nextFiles.map(async (f) => {
-          const dataUrl = await fileToDataUrl(f);
-          return { name: f.name, dataUrl, kind: labelFileKind(dataUrl), size: f.size };
-        })
-      );
-      setImages((prev) => [...prev, ...added].slice(0, MAX_LABEL_FILES));
+      const added = await Promise.all(nextFiles.map(readLabelFile));
+      setManualFiles((prev) => [...prev, ...added].slice(0, MAX_LABEL_FILES));
+      setActiveResult("manual");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read the label file.");
+      setManualError(err instanceof Error ? err.message : "Could not read the label file.");
     }
   };
 
-  // AC-6: Ctrl+V a screenshot straight onto the Verify tab.
+  const addFullPdfs = async (files: FileList | File[] | null) => {
+    if (!files) return;
+    setFullError(null);
+    try {
+      const pdfs = Array.from(files).filter((file) => inferSupportedLabelMime(file) === "application/pdf");
+      if (pdfs.length === 0) {
+        setFullError("Add one or more complete COLA application PDFs.");
+        return;
+      }
+      const remainingSlots = MAX_LABEL_FILES - fullPdfRows.length;
+      if (remainingSlots <= 0) {
+        setFullError(`Remove a PDF before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
+        return;
+      }
+      const nextFiles = pdfs.slice(0, remainingSlots);
+      const oversized = nextFiles.find((file) => file.size > MAX_LABEL_UPLOAD_BYTES);
+      if (oversized) {
+        setFullError(`${oversized.name} is ${formatBytes(oversized.size)}. Use PDFs under ${formatBytes(MAX_LABEL_UPLOAD_BYTES)} each.`);
+        return;
+      }
+      const added = (await Promise.all(nextFiles.map(readLabelFile))).filter(
+        (file): file is LabelFile & { kind: "pdf" } => file.kind === "pdf"
+      );
+      setFullPdfRows((prev) =>
+        [...prev, ...added.map((file) => ({ ...file, state: { kind: "idle" as const } }))].slice(0, MAX_LABEL_FILES)
+      );
+      setActiveFullId((prev) => prev ?? added[0]?.id ?? null);
+      setActiveResult("full");
+    } catch (err) {
+      setFullError(err instanceof Error ? err.message : "Could not read the PDF.");
+    }
+  };
+
+  // AC-6: Ctrl+V a screenshot straight onto the manual label workflow.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const items = Array.from(e.clipboardData?.items ?? []);
@@ -128,88 +181,112 @@ export default function VerifyView() {
         .filter((f): f is File => f !== null && isSupportedLabelFile(f));
       if (labelFiles.length === 0) return;
       e.preventDefault();
-      void addFiles(labelFiles);
+      void addManualFiles(labelFiles);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images.length]);
+  }, [manualFiles.length]);
 
   const loadSample = async (imageUrls: string[]) => {
-    setError(null);
-    setResult(null);
+    setManualError(null);
+    setManualResult(null);
     setApplication(SAMPLE_APPLICATION);
+    setActiveResult("manual");
     try {
       const imgs = await Promise.all(
         imageUrls.map(async (url) => {
           const blob = await fetch(url).then((r) => r.blob());
           const name = url.split("/").pop()!;
-          const file = new File([blob], name, { type: blob.type || "image/jpeg" });
-          const dataUrl = await fileToDataUrl(file);
-          return { name, dataUrl, kind: labelFileKind(dataUrl), size: file.size };
+          return readLabelFile(new File([blob], name, { type: blob.type || "image/jpeg" }));
         })
       );
-      setImages(imgs);
+      setManualFiles(imgs);
     } catch {
-      setError("Could not load the sample label files.");
+      setManualError("Could not load the sample label files.");
     }
   };
 
-  // ABV/net are optional: 2023-edition forms omit them (presence-only checks).
-  const applicationReady =
-    application.brandName.trim() !== "" &&
-    application.classType.trim() !== "" &&
-    application.applicantNameAddress.trim() !== "";
-  const canAttemptVerify = !busy && images.length > 0;
-  const verifyDisabledReason =
-    busy || canAttemptVerify
-      ? null
-      : "Add a PDF or image label file to verify.";
-
-  const onVerify = async () => {
-    let applicationForVerify = application;
-    if (!applicationReady) {
-      const pdfs = images.filter((img) => img.kind === "pdf").map((img) => img.dataUrl);
-      if (pdfs.length === 0) {
-        setError("Complete brand, class/type, and applicant fields before verifying.");
-        return;
-      }
-      setBusy("application");
-      setStep(0);
-      setError(null);
-      setResult(null);
-      try {
-        applicationForVerify = await extractApplicationFromPdfs(pdfs);
-        setApplication(applicationForVerify);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not extract the application from the PDF.");
-        setBusy(null);
-        return;
-      }
+  const verifyManual = async () => {
+    if (manualFiles.length === 0) {
+      setManualError("Add label files before verifying.");
+      return;
     }
-    setBusy("verify");
+    if (!applicationReady) {
+      setManualError("Complete brand, class/type, and applicant fields first, or use Full COLA PDFs below.");
+      return;
+    }
+    setManualBusy(true);
     setStep(0);
-    setError(null);
-    setResult(null);
+    setManualError(null);
+    setManualResult(null);
+    setActiveResult("manual");
     try {
-      setResult(
-        await verifyCase(applicationForVerify, images.map((i) => i.dataUrl), (stage) =>
+      setManualResult(
+        await verifyCase(application, manualFiles.map((file) => file.dataUrl), (stage) =>
           setStep(stage === "extracting" ? 1 : 2)
         )
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed.");
+      setManualError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
-      setBusy(null);
+      setManualBusy(false);
     }
   };
+
+  const verifyFullPdfs = async () => {
+    if (fullPdfRows.length === 0) {
+      setFullError("Add one or more complete COLA application PDFs.");
+      return;
+    }
+    setFullBusy(true);
+    setFullError(null);
+    setActiveResult("full");
+    const rowsToVerify = fullPdfRows.slice();
+    for (const row of rowsToVerify) {
+      setRowState(row.id, { kind: "running" });
+      setActiveFullId(row.id);
+      try {
+        const extractedApplication = await extractApplicationFromPdfs([row.dataUrl]);
+        const result = await verifyCase(extractedApplication, [row.dataUrl]);
+        setRowState(row.id, { kind: "done", application: extractedApplication, result });
+      } catch (err) {
+        setRowState(row.id, {
+          kind: "error",
+          message: err instanceof Error ? err.message : "Verification failed.",
+        });
+      }
+    }
+    setFullBusy(false);
+  };
+
+  const setRowState = (id: string, state: FullPdfState) => {
+    setFullPdfRows((prev) => prev.map((row) => (row.id === id ? { ...row, state } : row)));
+  };
+
+  const removeFullRow = (id: string) => {
+    setFullPdfRows((prev) => {
+      const next = prev.filter((row) => row.id !== id);
+      if (activeFullId === id) setActiveFullId(next[0]?.id ?? null);
+      return next;
+    });
+  };
+
+  const fullDone = fullPdfRows.filter((row) => row.state.kind === "done");
+  const fullErrors = fullPdfRows.filter((row) => row.state.kind === "error");
+  const activeFullRow = fullPdfRows.find((row) => row.id === activeFullId) ?? fullDone[0] ?? null;
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div className="space-y-5">
         <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold">Application (Form 5100.31)</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[15px] font-semibold">Application + label files</h2>
+              <p className="mt-0.5 text-[12px] text-muted">
+                Fill or prefill the application, then attach the matching label artwork.
+              </p>
+            </div>
             <div className="flex gap-1.5">
               <Chip tone="highlight" onClick={() => void loadSample(SAMPLE_IMAGES)}>
                 Load real example
@@ -231,7 +308,7 @@ export default function VerifyView() {
               onChange={(e) => setTtbId(e.target.value.replace(/\D/g, ""))}
             />
             <Chip disabled={colaBusy || ttbId.length !== 14} onClick={() => void prefillFromRegistry(ttbId)}>
-              {colaBusy ? "Fetching…" : "Fetch"}
+              {colaBusy ? "Fetching..." : "Fetch"}
             </Chip>
             <Chip disabled={colaBusy} onClick={() => void prefillFromRegistry(OTIUM_TTB_ID)}>
               Demo TTB ID
@@ -249,124 +326,331 @@ export default function VerifyView() {
             )}
           </div>
           <ApplicationForm value={application} onChange={setApplication} />
+          <div className="mt-5 border-t border-line-2 pt-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-[13px] font-semibold">Label files for this application</h3>
+              <span className="text-[11px] text-muted">{manualFiles.length}/{MAX_LABEL_FILES}</span>
+            </div>
+            <FileUploadBox
+              inputRef={manualFileInput}
+              accept={ACCEPTED_LABEL_FILE_TYPES}
+              label="Click, drop, or paste label files"
+              onFiles={addManualFiles}
+            />
+            <FileTiles files={manualFiles} onRemove={(id) => setManualFiles((prev) => prev.filter((file) => file.id !== id))} />
+            <div className="mt-4">
+              <IconButton
+                icon={<Sparkles />}
+                loading={manualBusy}
+                disabled={manualBusy || manualFiles.length === 0}
+                onClick={() => void verifyManual()}
+              >
+                {manualBusy ? "Verifying..." : "Verify application + label"}
+              </IconButton>
+              {manualFiles.length === 0 && (
+                <p className="mt-2 text-[11.5px] text-muted">Add label files before verifying this application.</p>
+              )}
+            </div>
+            {manualError && (
+              <p className="mt-3 rounded-lg border border-accent-red/30 bg-accent-red/5 px-3 py-2 text-[12.5px] text-accent-red">
+                {manualError}
+              </p>
+            )}
+          </div>
         </Card>
 
         <Card>
-          <h2 className="mb-1 text-[15px] font-semibold">Label files</h2>
-          <p className="mb-3 text-[12px] text-muted">
-            Up to {MAX_LABEL_FILES} PDFs or images of one container — front, back, neck. The
-            government warning is usually on the back label.
-          </p>
-          <input
-            ref={fileInput}
-            type="file"
-            accept={ACCEPTED_LABEL_FILE_TYPES}
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              void addFiles(e.target.files);
-              e.target.value = "";
-            }}
+          <div className="mb-3">
+            <h2 className="text-[15px] font-semibold">Full COLA PDFs</h2>
+            <p className="mt-0.5 text-[12px] text-muted">
+              Upload complete application PDFs here. Each PDF is read and verified as its own case.
+            </p>
+          </div>
+          <FileUploadBox
+            inputRef={fullPdfInput}
+            accept=".pdf,application/pdf"
+            label="Click or drop complete COLA PDFs"
+            onFiles={addFullPdfs}
           />
-          <button
-            type="button"
-            onClick={() => fileInput.current?.click()}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface/60 py-8 text-muted transition hover:border-accent/50 hover:text-ink-2 focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              void addFiles(e.dataTransfer.files);
-            }}
-          >
-            <ImageIcon />
-            <span className="text-[13px] font-medium">Click, drop, or paste label files</span>
-          </button>
-          {images.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-3">
-              {images.map((img, i) => (
-                <div key={img.name + i} className="group relative">
-                  {img.kind === "pdf" ? (
-                    <div className="flex h-28 w-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-line bg-card px-2 text-center text-ink-2 shadow-card">
-                      <FilePdf size={22} />
-                      <span className="text-[11px] font-semibold uppercase text-accent-red">PDF</span>
-                      <span className="w-full truncate text-[10.5px] text-muted" title={img.name}>
-                        {img.name}
-                      </span>
-                    </div>
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={img.dataUrl}
-                      alt={img.name}
-                      className="h-28 rounded-lg border border-line object-contain shadow-card"
-                    />
-                  )}
+          {fullPdfRows.length > 0 && (
+            <ul className="mt-3 divide-y divide-line-2 rounded-lg border border-line-2">
+              {fullPdfRows.map((row) => (
+                <li key={row.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <FilePdf size={18} />
                   <button
                     type="button"
-                    aria-label={`Remove ${img.name}`}
-                    onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-                    className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white opacity-0 shadow-pop transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/25 group-hover:opacity-100"
+                    onClick={() => {
+                      setActiveResult("full");
+                      setActiveFullId(row.id);
+                    }}
+                    className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-ink-2 hover:text-ink"
+                    title={row.name}
+                  >
+                    {row.name}
+                  </button>
+                  <FullRowStatus row={row} />
+                  <button
+                    type="button"
+                    aria-label={`Remove ${row.name}`}
+                    disabled={fullBusy}
+                    onClick={() => removeFullRow(row.id)}
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-surface hover:text-ink disabled:opacity-40"
                   >
                     <XIcon />
                   </button>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
           <div className="mt-4">
-              <IconButton
-                icon={<Sparkles />}
-                loading={busy !== null}
-                disabled={!canAttemptVerify}
-                onClick={() => void onVerify()}
-              >
-                {busy === "application"
-                  ? "Reading PDF…"
-                  : busy === "verify"
-                    ? "Verifying…"
-                    : "Verify label"}
-              </IconButton>
-            {verifyDisabledReason && (
-              <p className="mt-2 text-[11.5px] text-muted">{verifyDisabledReason}</p>
+            <IconButton
+              icon={<Sparkles />}
+              loading={fullBusy}
+              disabled={fullBusy || fullPdfRows.length === 0}
+              onClick={() => void verifyFullPdfs()}
+            >
+              {fullBusy
+                ? "Verifying PDFs..."
+                : fullPdfRows.length > 0
+                  ? `Verify ${fullPdfRows.length} full PDF${fullPdfRows.length === 1 ? "" : "s"}`
+                  : "Verify full PDFs"}
+            </IconButton>
+            {fullPdfRows.length === 0 && (
+              <p className="mt-2 text-[11.5px] text-muted">Use this for one or more complete COLA application PDFs.</p>
             )}
           </div>
-          {error && (
+          {fullError && (
             <p className="mt-3 rounded-lg border border-accent-red/30 bg-accent-red/5 px-3 py-2 text-[12.5px] text-accent-red">
-              {error}
+              {fullError}
             </p>
           )}
         </Card>
       </div>
 
       <div>
-        {busy ? (
-          <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-card border border-dashed border-line bg-surface/40 px-4 text-center">
-            <Stepper steps={VERIFY_STEPS} current={step} />
-            <p className="text-[12px] text-muted" aria-live="polite">
-              {busy === "application"
-                ? "Reading application fields from the uploaded PDF…"
-                : step === 0
-                ? "Sending the label files…"
-                : step === 1
-                  ? "Reading every field printed on the label…"
-                  : "Comparing the label against the application…"}
-            </p>
-          </div>
-        ) : result ? (
-          <ResultPanel result={result} />
+        {activeResult === "full" ? (
+          <FullPdfResults
+            rows={fullPdfRows}
+            done={fullDone.length}
+            errors={fullErrors.length}
+            activeRow={activeFullRow}
+            onSelect={(id) => {
+              setActiveResult("full");
+              setActiveFullId(id);
+            }}
+          />
+        ) : manualBusy ? (
+          <BusyPanel step={step} />
+        ) : manualResult ? (
+          <ResultPanel result={manualResult} />
         ) : (
-          <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">
-            <div className="max-w-[260px] text-[13px] leading-relaxed text-muted">
-              Fill in the application, add the label files, and the match report will appear
-              here — typically in about 5 seconds.
-            </div>
-          </div>
+          <EmptyResults />
         )}
       </div>
     </div>
   );
 }
 
-function labelFileKind(dataUrl: string): LabelImage["kind"] {
-  return isPdfDataUrl(dataUrl) ? "pdf" : "image";
+function BusyPanel({ step }: { step: number }) {
+  return (
+    <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-card border border-dashed border-line bg-surface/40 px-4 text-center">
+      <Stepper steps={VERIFY_STEPS} current={step} />
+      <p className="text-[12px] text-muted" aria-live="polite">
+        {step === 0
+          ? "Sending the label files..."
+          : step === 1
+            ? "Reading every field printed on the label..."
+            : "Comparing the label against the application..."}
+      </p>
+    </div>
+  );
+}
+
+function EmptyResults() {
+  return (
+    <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">
+      <div className="max-w-[280px] text-[13px] leading-relaxed text-muted">
+        Verify an application + label set, or upload full COLA PDFs, and results will appear here.
+      </div>
+    </div>
+  );
+}
+
+function FullPdfResults({
+  rows,
+  done,
+  errors,
+  activeRow,
+  onSelect,
+}: {
+  rows: FullPdfRow[];
+  done: number;
+  errors: number;
+  activeRow: FullPdfRow | null;
+  onSelect: (id: string) => void;
+}) {
+  if (rows.length === 0) return <EmptyResults />;
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-[15px] font-semibold">Full PDF results</h2>
+          <span className="text-[12px] text-muted">
+            {done}/{rows.length} complete{errors ? ` · ${errors} failed` : ""}
+          </span>
+        </div>
+        <ul className="space-y-2">
+          {rows.map((row) => (
+            <li key={row.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(row.id)}
+                className={
+                  "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition " +
+                  (activeRow?.id === row.id
+                    ? "border-accent/50 bg-accent/5"
+                    : "border-line-2 bg-card hover:border-accent/35 hover:bg-surface")
+                }
+              >
+                <FilePdf size={18} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-ink-2">{row.name}</span>
+                  <span className="block truncate text-[11.5px] text-muted">
+                    {row.state.kind === "done"
+                      ? row.state.application.brandName
+                      : row.state.kind === "error"
+                        ? row.state.message
+                        : row.state.kind === "running"
+                          ? "Reading and verifying..."
+                          : "Ready"}
+                  </span>
+                </span>
+                <FullRowStatus row={row} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      {activeRow?.state.kind === "done" ? (
+        <ResultPanel result={activeRow.state.result} />
+      ) : activeRow?.state.kind === "running" ? (
+        <div className="flex min-h-[220px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center text-[13px] text-muted">
+          Reading application fields and label text from {activeRow.name}...
+        </div>
+      ) : activeRow?.state.kind === "error" ? (
+        <div className="rounded-card border border-accent-red/30 bg-accent-red/5 p-4 text-[13px] text-accent-red">
+          {activeRow.state.message}
+        </div>
+      ) : (
+        <div className="flex min-h-[220px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center text-[13px] text-muted">
+          Select Verify full PDFs to process this file.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FullRowStatus({ row }: { row: FullPdfRow }) {
+  if (row.state.kind === "done") {
+    return (
+      <Badge className="border-accent-green/40 bg-accent-green/10 text-accent-green">
+        {row.state.result.report.matchPercentage}%
+      </Badge>
+    );
+  }
+  if (row.state.kind === "running") {
+    return <Badge className="border-accent-blue/40 bg-accent-blue/10 text-accent-blue">running</Badge>;
+  }
+  if (row.state.kind === "error") {
+    return <Badge className="border-accent-red/40 bg-accent-red/10 text-accent-red">failed</Badge>;
+  }
+  return <Badge>ready</Badge>;
+}
+
+function FileUploadBox({
+  inputRef,
+  accept,
+  label,
+  onFiles,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  accept: string;
+  label: string;
+  onFiles: (files: FileList | File[] | null) => void | Promise<void>;
+}) {
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void onFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface/60 py-7 text-muted transition hover:border-accent/50 hover:text-ink-2 focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          void onFiles(e.dataTransfer.files);
+        }}
+      >
+        <ImageIcon />
+        <span className="text-[13px] font-medium">{label}</span>
+      </button>
+    </>
+  );
+}
+
+function FileTiles({ files, onRemove }: { files: LabelFile[]; onRemove: (id: string) => void }) {
+  if (files.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-3">
+      {files.map((file) => (
+        <div key={file.id} className="group relative">
+          {file.kind === "pdf" ? (
+            <div className="flex h-28 w-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-line bg-card px-2 text-center text-ink-2 shadow-card">
+              <FilePdf size={22} />
+              <span className="text-[11px] font-semibold uppercase text-accent-red">PDF</span>
+              <span className="w-full truncate text-[10.5px] text-muted" title={file.name}>
+                {file.name}
+              </span>
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={file.dataUrl}
+              alt={file.name}
+              className="h-28 rounded-lg border border-line object-contain shadow-card"
+            />
+          )}
+          <button
+            type="button"
+            aria-label={`Remove ${file.name}`}
+            onClick={() => onRemove(file.id)}
+            className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white opacity-0 shadow-pop transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/25 group-hover:opacity-100"
+          >
+            <XIcon />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+async function readLabelFile(file: File): Promise<LabelFile> {
+  const dataUrl = await fileToDataUrl(file);
+  return {
+    id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+    name: file.name,
+    dataUrl,
+    kind: isPdfDataUrl(dataUrl) ? "pdf" : "image",
+    size: file.size,
+  };
 }

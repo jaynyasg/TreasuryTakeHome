@@ -27,12 +27,12 @@ Click **Load real example** on the Verify tab to prefill a real approved COLA
 
 ## What it does
 
-- **Verify a label** — enter the application fields (or **prefill from the public COLA
-  registry by TTB ID**, labeled live/cached), then upload, drop, or **paste** up to 4
-  PDFs or images of one container. Match report in ~5 seconds: overall %, per-field
-  match/mismatch/missing/needs-review, and a plain-English reason for each.
-  Full COLA PDFs can also seed the application fields automatically when those fields
-  are blank.
+- **Verify a label** — two clear workflows: enter/prefill the application fields and
+  attach the matching label files, or upload up to 4 complete COLA PDFs in the separate
+  full-form section. Each full PDF is read and verified as its own case, so multi-PDF
+  uploads produce multiple results instead of one merged report. Match report in ~5
+  seconds: overall %, per-field match/mismatch/missing/needs-review, and a plain-English
+  reason for each.
   A "Try a bad photo" chip demos honest needs-review on a perspective-skewed scan.
 - **Generate test cases** — seeded mock application+label pairs, clean or with injected
   defects (wrong ABV, missing warning, title-case "Government Warning:", swapped brand…).
