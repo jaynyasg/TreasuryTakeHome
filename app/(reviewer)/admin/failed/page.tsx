@@ -1,33 +1,32 @@
 import PageHeader from "@/components/app-shell/PageHeader";
 import Badge from "@/components/house/Badge";
-import { listAssignments } from "@/lib/server/admin";
+import { listDeadLetters } from "@/lib/server/admin";
 import { resolveAdminPage } from "@/components/admin/adminPage";
 import Forbidden403 from "@/components/admin/Forbidden403";
 import OpsTabs from "@/components/admin/OpsTabs";
-import AssignmentsTable from "@/components/admin/AssignmentsTable";
+import DeadLetterTable from "@/components/admin/DeadLetterTable";
 
 /**
- * Assignments tab (plan Admin IA: "Reassign Batch / Case Ownership"). Table-first
- * with a per-row Reassign action under OPTIMISTIC concurrency: the row carries
- * its `assignmentVersion`, the action passes it as `expectedVersion`, and a
- * stale conflict surfaces a refresh-and-retry warning.
+ * Failed / Dead-letter Jobs tab (plan Admin IA). Table-first: the dead-letter
+ * table carries the work, with a per-row guarded Replay action (reason required).
+ * Loading/empty/error/permission-denied states per the Core UI State Table.
  */
 export const dynamic = "force-dynamic";
 
-export default async function AssignmentsPage() {
+export default async function FailedJobsPage() {
   const ctx = await resolveAdminPage();
-  if (ctx.forbidden) return <Forbidden403 title="Assignments" />;
+  if (ctx.forbidden) return <Forbidden403 title="Failed jobs" />;
 
   let body: React.ReactNode;
   try {
-    const rows = await listAssignments(ctx.principal);
+    const rows = await listDeadLetters(ctx.principal);
     body =
       rows.length === 0 ? (
         <p className="rounded-card border border-line bg-card px-4 py-6 text-center text-[13px] text-muted">
-          No batches yet. Assignments appear once batches are created.
+          No dead-letter jobs. The processing line is clear.
         </p>
       ) : (
-        <AssignmentsTable rows={rows} actor={ctx.actorLabel} />
+        <DeadLetterTable rows={rows} actor={ctx.actorLabel} />
       );
   } catch {
     body = (
@@ -35,7 +34,7 @@ export default async function AssignmentsPage() {
         role="alert"
         className="rounded-card border border-accent-red/40 bg-accent-red/10 p-4 text-[13px] text-ink"
       >
-        Assignments are unavailable. Refresh to retry.
+        Dead-letter jobs are unavailable. Refresh to retry.
       </div>
     );
   }
@@ -43,8 +42,8 @@ export default async function AssignmentsPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Assignments"
-        description="Reassign batch ownership with optimistic concurrency. A stale view warns you to refresh before retrying."
+        title="Failed / Dead-letter Jobs"
+        description="Poison jobs parked after exhausting retries. Replay after repair — replay appends a new attempt and never overwrites prior evidence."
         counts={<Badge>Admin · Operations Console</Badge>}
       />
       <OpsTabs />
