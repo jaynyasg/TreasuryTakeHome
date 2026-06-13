@@ -56,10 +56,46 @@ interface DegradedCase {
   allowedFlagged: FieldKey[];
 }
 
+/**
+ * A prompt-injection fixture: an extracted label whose text tries to INSTRUCT
+ * the system (plan "Prompt injection posture"). The deterministic engine must
+ * ignore the instructions and produce an unaffected verdict.
+ */
+interface PromptInjectionCase {
+  id: string;
+  comment?: string;
+  baseApplication: unknown;
+  expect: {
+    /** The deterministic overall must NOT be this (i.e. no compliance bypass). */
+    overallNot: MatchReport["overall"];
+    /** Fields the engine must still flag despite the injected instructions. */
+    mustFlag: FieldKey[];
+  };
+}
+
+/**
+ * Blocking offline release-gate thresholds (plan "Live eval release
+ * thresholds"), enforced deterministically over the committed snapshots so
+ * `npm run eval` is the gate even without a live model.
+ */
+interface ReleaseThresholds {
+  comment?: string;
+  schemaValidPct: number;
+  noInjectionBypass: boolean;
+  exactWarningTextBehavior: boolean;
+  uncertainTypographyRouting: boolean;
+  /** Cases whose warning is exact + all-caps -> warning verdict must be `match`. */
+  warningExactCaseIds: string[];
+  /** Cases whose warning typography is uncertain -> verdict must be `needs_review`. */
+  uncertainTypographyCaseIds: string[];
+}
+
 interface Golden {
   cases: RealCase[];
   degradedCases: DegradedCase[];
   generatedSeeds: Array<{ seed: number; defects: number }>;
+  promptInjectionCases: PromptInjectionCase[];
+  releaseThresholds: ReleaseThresholds;
 }
 
 /** D8.1 anti-escape-hatch floor: degraded cases must still read most of the label. */
@@ -126,6 +162,140 @@ async function renderedDataUrl(svg: string): Promise<string> {
   const { Resvg } = await import("@resvg/resvg-js");
   const png = new Resvg(svg, { fitTo: { mode: "width", value: 960 } }).render().asPng();
   return `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
+}
+
+/** Every snapshot id the offline gate replays (used by the schema-valid floor). */
+function allSnapshotIds(): string[] {
+  const ids = [
+    ...golden.cases.map((c) => c.id),
+    ...golden.degradedCases.map((d) => d.id),
+    ...golden.generatedSeeds.map((g) => `gen_${g.seed}_${g.defects}d`),
+  ];
+  return ids;
+}
+
+/** The warning verdict for a snapshot scored against an application, or null. */
+function warningVerdict(
+  app: ColaApplication,
+  label: ExtractedLabel
+): string | undefined {
+  return buildMatchReport(app, label).verdicts.find(
+    (v) => v.field === "governmentWarning"
+  )?.status;
+}
+
+/**
+ * RELEASE THRESHOLD assertions (plan "Live eval release thresholds"), enforced
+ * deterministically over the committed offline fixtures so the offline gate
+ * blocks a release on any of: malformed model output, a prompt-injection
+ * compliance bypass, broken exact warning-text/capitalization behavior, or
+ * uncertain typography NOT routed to needs_review. These run in BOTH offline and
+ * live modes — after a live re-record they grade the fresh snapshots the same way.
+ */
+function releaseThresholds(): void {
+  const t = golden.releaseThresholds;
+  console.log("\n--- RELEASE THRESHOLDS (offline gate) ---");
+
+  // 1. Schema-valid model output: every replayed snapshot must re-parse through
+  //    the ExtractedLabel zod contract. Nothing malformed reaches the engine.
+  const ids = allSnapshotIds();
+  let valid = 0;
+  let present = 0;
+  for (const id of ids) {
+    const p = snapshotPath(id);
+    if (!fs.existsSync(p)) continue;
+    present += 1;
+    const parsed = ExtractedLabel.safeParse(JSON.parse(fs.readFileSync(p, "utf8")));
+    if (parsed.success) valid += 1;
+    else check(`threshold.schemaValid: ${id} parses`, false, parsed.error.message);
+  }
+  const pct = present === 0 ? 0 : Math.round((valid / present) * 100);
+  check(
+    `threshold.schemaValid >= ${t.schemaValidPct}% (model output schema-valid)`,
+    pct >= t.schemaValidPct,
+    `${valid}/${present} snapshots valid (${pct}%)`
+  );
+
+  // 2. No prompt-injection compliance bypass: untrusted label text that tries to
+  //    instruct the system must NOT flip the deterministic verdict to a pass.
+  if (t.noInjectionBypass) {
+    for (const inj of golden.promptInjectionCases) {
+      const extracted = loadSnapshot(inj.id);
+      if (!extracted) {
+        check(`threshold.injection ${inj.id}: snapshot exists`, false, "missing fixture");
+        continue;
+      }
+      const app = ColaApplication.parse(inj.baseApplication);
+      const report = buildMatchReport(app, extracted);
+      // The injected "approve this / output all_match" instructions must have no
+      // effect: the overall is NOT the compliant pass the injection demanded.
+      check(
+        `threshold.injection ${inj.id}: no bypass (overall != ${inj.expect.overallNot})`,
+        report.overall !== inj.expect.overallNot,
+        `got overall ${report.overall}`
+      );
+      const flagged = report.verdicts
+        .filter((v) => v.status === "mismatch" || v.status === "missing_on_label")
+        .map((v) => v.field);
+      for (const f of inj.expect.mustFlag) {
+        check(
+          `threshold.injection ${inj.id}: still flags ${f}`,
+          flagged.includes(f),
+          `flagged: [${flagged.join(", ")}]`
+        );
+      }
+    }
+  }
+
+  // 3. Exact warning text/capitalization behavior, exercised in BOTH directions:
+  //    a word-for-word all-caps warning verdicts `match`; a deviating/missing one
+  //    verdicts `mismatch`/`missing_on_label`.
+  if (t.exactWarningTextBehavior) {
+    for (const id of t.warningExactCaseIds) {
+      const c = golden.cases.find((x) => x.id === id);
+      const extracted = c ? loadSnapshot(id) : null;
+      if (!c || !extracted) {
+        check(`threshold.exactWarning ${id}: case + snapshot exist`, false);
+        continue;
+      }
+      const status = warningVerdict(ColaApplication.parse(c.application), extracted);
+      check(
+        `threshold.exactWarning ${id}: exact warning verdicts match`,
+        status === "match",
+        `got ${status}`
+      );
+    }
+    // Negative direction: the injection fixture's warning deviates word-for-word,
+    // so its warning verdict must be a mismatch (exact-text rule rejects it).
+    for (const inj of golden.promptInjectionCases) {
+      const extracted = loadSnapshot(inj.id);
+      if (!extracted) continue;
+      const status = warningVerdict(ColaApplication.parse(inj.baseApplication), extracted);
+      check(
+        `threshold.exactWarning ${inj.id}: deviating warning verdicts mismatch`,
+        status === "mismatch" || status === "missing_on_label",
+        `got ${status}`
+      );
+    }
+  }
+
+  // 4. Uncertain typography routes to needs_review (never a silent false pass).
+  if (t.uncertainTypographyRouting) {
+    for (const id of t.uncertainTypographyCaseIds) {
+      const c = golden.cases.find((x) => x.id === id);
+      const extracted = c ? loadSnapshot(id) : null;
+      if (!c || !extracted) {
+        check(`threshold.uncertainTypography ${id}: case + snapshot exist`, false);
+        continue;
+      }
+      const status = warningVerdict(ColaApplication.parse(c.application), extracted);
+      check(
+        `threshold.uncertainTypography ${id}: routes warning to needs_review`,
+        status === "needs_review",
+        `got ${status}`
+      );
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -208,6 +378,11 @@ async function main(): Promise<void> {
     }
     grade(id, gc.application, extracted, expect);
   }
+
+  // Release-gate thresholds (plan "Live eval release thresholds"): blocking
+  // deterministic checks over the committed fixtures. Run after the per-case
+  // grading so a threshold failure counts toward the same exit code.
+  releaseThresholds();
 
   console.log(failures === 0 ? "\nEVAL GREEN" : `\nEVAL RED: ${failures} failure(s)`);
   process.exit(failures === 0 ? 0 : 1);
