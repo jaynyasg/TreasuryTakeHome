@@ -12,6 +12,7 @@
 import type { WorkerDeps } from "./deps";
 import { processCaseJob, type CaseOutcome } from "./processCase";
 import type { HealthState } from "./health";
+import { isWorkerProcessingDisabled } from "@/lib/flags";
 
 /** How long a claimed job stays invisible before redelivery if not acked. */
 const DEFAULT_VISIBILITY_TIMEOUT_MS = 30_000;
@@ -86,11 +87,18 @@ export async function runWorkerLoop(
   while (!opts.signal?.aborted) {
     try {
       opts.health?.markPoll(now());
-      const outcomes = await runOnce(deps, {
-        max,
-        visibilityTimeoutMs: opts.visibilityTimeoutMs,
-      });
-      opts.health?.markProcessed(outcomes);
+      // Runtime kill switch (plan "Operational brakes"): when worker processing
+      // is disabled, keep the loop + heartbeat alive but claim/process nothing,
+      // so in-flight jobs drain and queued work waits rather than failing.
+      if (isWorkerProcessingDisabled()) {
+        opts.health?.markProcessed([]);
+      } else {
+        const outcomes = await runOnce(deps, {
+          max,
+          visibilityTimeoutMs: opts.visibilityTimeoutMs,
+        });
+        opts.health?.markProcessed(outcomes);
+      }
     } catch (err) {
       opts.health?.markError(err instanceof Error ? err.message : String(err));
     }

@@ -23,6 +23,7 @@ import {
   executePurge,
 } from "@/lib/db/services/retentionPurge";
 import { isPurgeKillSwitchOn } from "@/components/admin/killSwitches";
+import { isReplayDisabled, areExportsDisabled } from "@/lib/flags";
 
 /**
  * Admin Operations Console server actions (Stage 8 / T8+T9).
@@ -93,6 +94,13 @@ export async function replayAction(
   let db: DbClient | null = null;
   try {
     const principal = await resolveAdmin();
+    if (isReplayDisabled()) {
+      return {
+        ok: false,
+        error:
+          "Replay is disabled by the runtime kill switch. Enable it via ops/env to proceed.",
+      };
+    }
     db = createPgPool();
     const queue = createPostgresOutboxQueue(db);
     const result = await replayDeadLetter(db, queue, {
@@ -182,6 +190,13 @@ export async function generateExportAction(
   let db: DbClient | null = null;
   try {
     const principal = await resolveAdmin();
+    if (areExportsDisabled()) {
+      return {
+        ok: false,
+        error:
+          "Exports are disabled by the runtime kill switch. Enable it via ops/env to proceed.",
+      };
+    }
     db = createPgPool();
     const storage = selectStorage();
     await generateExport(db, storage, {
