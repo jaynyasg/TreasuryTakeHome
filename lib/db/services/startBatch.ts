@@ -144,8 +144,8 @@ export async function startBatch(
       }
 
       // Object-manifest rows for the paired files (manifest is source of truth).
-      await insertCaseFileFromManifest(tx, caseId, "application", paired.application);
-      await insertCaseFileFromManifest(tx, caseId, "label", paired.label);
+      await insertCaseFileFromManifest(tx, session.id, caseId, "application", paired.application);
+      await insertCaseFileFromManifest(tx, session.id, caseId, "label", paired.label);
 
       // draft -> queued so the worker may claim it.
       await setCaseStatus(tx, caseId, "queued");
@@ -235,9 +235,19 @@ function rowToManifestEntry(row: ManifestEntryRow): ManifestEntry {
   };
 }
 
-/** Insert one case_file object-manifest row from a paired manifest entry. */
+/**
+ * Insert one case_file object-manifest row from a paired manifest entry.
+ *
+ * `object_key` MUST equal the key the upload route stored the bytes under so the
+ * worker can later fetch them. The upload route
+ * (`app/api/intake/[id]/files/route.ts`) writes bytes to
+ * `intake/{sessionId}/{fileName}`, so we reconstruct that exact key here from
+ * the intake session id + the manifest entry's file name. (The manifest stores
+ * only the file name; the upload route owns the bytes + their key.)
+ */
 async function insertCaseFileFromManifest(
   tx: Queryable,
+  intakeSessionId: string,
   caseId: string,
   kind: "application" | "label",
   entry: ManifestEntry
@@ -247,9 +257,7 @@ async function insertCaseFileFromManifest(
     caseId,
     kind,
     objectProvider: OBJECT_PROVIDER,
-    // Object key mirrors the intake upload key (intake/{sessionId}/{fileName});
-    // the manifest stores the file name, the upload route stores the bytes.
-    objectKey: entry.fileName,
+    objectKey: `intake/${intakeSessionId}/${entry.fileName}`,
     checksum: entry.checksum || null,
     sizeBytes: entry.size || null,
     contentType: entry.contentType || null,

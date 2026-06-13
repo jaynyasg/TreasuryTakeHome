@@ -59,6 +59,18 @@ export interface SeedCaseOptions {
   application?: ColaApplication;
   /** Store a label object + manifest row (default true). */
   withLabelFile?: boolean;
+  /**
+   * Persist the case's `application.*` extracted_fields (default true). Set
+   * false to model the REAL durable-batch path, where startBatch stores the
+   * application's bytes but not its extracted fields — the worker must extract
+   * on demand. Pair with `withApplicationFile` so the worker has bytes to read.
+   */
+  withApplicationFields?: boolean;
+  /**
+   * Store an application object + case_file manifest row (default false). The
+   * stored bytes let the worker's on-demand `ensureApplication` path run.
+   */
+  withApplicationFile?: boolean;
 }
 
 export interface SeededCase {
@@ -67,6 +79,8 @@ export interface SeededCase {
   ownerId: string;
   labelFileId: string | null;
   labelObjectKey: string | null;
+  applicationFileId: string | null;
+  applicationObjectKey: string | null;
 }
 
 /**
@@ -82,6 +96,8 @@ export async function seedCase(
   const batchId = opts.batchId ?? `batch-${caseId}`;
   const application = opts.application ?? CLEAN_MATCH_APPLICATION;
   const withLabelFile = opts.withLabelFile ?? true;
+  const withApplicationFields = opts.withApplicationFields ?? true;
+  const withApplicationFile = opts.withApplicationFile ?? false;
 
   const ownerId = await seedUser(db, "reviewer");
   await insertBatch(db, { id: batchId, ownerUserId: ownerId, status: "processing" });
@@ -95,11 +111,37 @@ export async function seedCase(
   });
 
   // Application fields (what intake persists; the worker reads these to score).
-  await insertExtractedFields(
-    db,
-    caseId,
-    applicationToFields(application, (key) => `appfield-${caseId}-${key}`)
-  );
+  // Skipped to model the real durable-batch path, where only the application's
+  // bytes are stored and the worker must extract the fields on demand.
+  if (withApplicationFields) {
+    await insertExtractedFields(
+      db,
+      caseId,
+      applicationToFields(application, (key) => `appfield-${caseId}-${key}`)
+    );
+  }
+
+  let applicationFileId: string | null = null;
+  let applicationObjectKey: string | null = null;
+  if (withApplicationFile) {
+    applicationObjectKey = `intake/${batchId}/application.pdf`;
+    const stored = await storage.put(
+      applicationObjectKey,
+      new Uint8Array([0x25, 0x50, 0x44, 0x46]), // tiny %PDF-ish bytes
+      { contentType: "application/pdf" }
+    );
+    applicationFileId = `file-${caseId}-application`;
+    await insertCaseFile(db, {
+      id: applicationFileId,
+      caseId,
+      kind: "application",
+      objectProvider: "fake",
+      objectKey: stored.key,
+      checksum: stored.checksum,
+      sizeBytes: stored.size,
+      contentType: stored.contentType,
+    });
+  }
 
   let labelFileId: string | null = null;
   let labelObjectKey: string | null = null;
@@ -123,7 +165,15 @@ export async function seedCase(
     });
   }
 
-  return { caseId, batchId, ownerId, labelFileId, labelObjectKey };
+  return {
+    caseId,
+    batchId,
+    ownerId,
+    labelFileId,
+    labelObjectKey,
+    applicationFileId,
+    applicationObjectKey,
+  };
 }
 
 /** Enqueue a process-case job for `caseId`. */

@@ -1,5 +1,11 @@
 import { extractLabel as extractLabelViaOpenAI, ExtractionError } from "@/lib/extract";
+import {
+  extractApplicationFromFiles,
+  ApplicationExtractionError,
+} from "@/lib/applicationExtract";
 import type {
+  ApplicationExtractionInput,
+  ApplicationExtractionResult,
   LabelExtractionInput,
   ModelAdapter,
   ModelExtractionError,
@@ -19,6 +25,37 @@ import type {
 
 function dataUrl(input: LabelExtractionInput): string {
   return `data:${input.mimeType};base64,${input.imageBase64}`;
+}
+
+/**
+ * Classify an ApplicationExtractionError from lib/applicationExtract.ts into a
+ * ModelExtractionError, mirroring `classify` for labels.
+ *
+ * lib/applicationExtract.ts throws with stable messages:
+ *   - retryable===true (429/5xx/network)    -> timeout (bounded retry)
+ *   - "Model refused: ..."                  -> refusal
+ *   - "Model returned empty content"        -> empty
+ *   - "Model returned no choices"           -> empty
+ *   - "Model output was truncated"          -> empty
+ *   - "Model output was not valid JSON"     -> malformed
+ *   - "...violated the contract..."         -> malformed
+ *   - default                               -> malformed (never a misleading ok)
+ */
+function classifyApplication(err: ApplicationExtractionError): ModelExtractionError {
+  if (err.retryable) return "timeout";
+  const message = err.message;
+  if (message.includes("refused")) return "refusal";
+  if (
+    message.includes("truncated") ||
+    message.includes("empty content") ||
+    message.includes("no choices")
+  ) {
+    return "empty";
+  }
+  if (message.includes("not valid JSON") || message.includes("violated the contract")) {
+    return "malformed";
+  }
+  return "malformed";
 }
 
 /**
@@ -70,6 +107,27 @@ export function createOpenAIModel(): ModelAdapter {
           ok: false,
           error: "malformed",
           raw: err instanceof Error ? err.message : "Unknown extraction failure",
+        };
+      }
+    },
+
+    async extractApplication(
+      input: ApplicationExtractionInput
+    ): Promise<ApplicationExtractionResult> {
+      try {
+        const { application } = await extractApplicationFromFiles(
+          `data:${input.mimeType};base64,${input.fileBase64}`
+        );
+        return { ok: true, data: application };
+      } catch (err) {
+        if (err instanceof ApplicationExtractionError) {
+          return { ok: false, error: classifyApplication(err), raw: err.message };
+        }
+        return {
+          ok: false,
+          error: "malformed",
+          raw:
+            err instanceof Error ? err.message : "Unknown application extraction failure",
         };
       }
     },

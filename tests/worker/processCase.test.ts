@@ -180,6 +180,70 @@ describe("processCaseJob", () => {
     );
   });
 
+  it("ON-DEMAND APPLICATION: no app fields but an app file => worker extracts (stub), scores, persists app fields", async () => {
+    // The REAL durable-batch path: startBatch stored the application's BYTES but
+    // not its extracted fields. The worker must extract on demand via the stub
+    // (DEFAULT_STUB_APPLICATION), score, and persist `application.*` for replay.
+    const h = await buildHarness(); // default stub: clean label + clean application
+    db = h.db;
+    const { caseId } = await seedCase(h.db, h.storage, {
+      withApplicationFields: false,
+      withApplicationFile: true,
+    });
+    await enqueueCaseJob(h.queue, caseId);
+
+    const outcome = await processCaseJob(h.deps, await claimOne(h));
+    expect(outcome.kind).toBe("scored");
+    if (outcome.kind === "scored") {
+      expect(outcome.overall).toBe("clean_match");
+      expect(outcome.matchPercentage).toBe(100);
+    }
+    expect((await getCase(h.db, caseId))?.status).toBe("clean_match");
+
+    // A verdict was produced (the application was resolved on demand).
+    expect(await listVerdicts(h.db, caseId)).toHaveLength(1);
+
+    // The extracted application fields are now persisted for cheap replay.
+    const fields = await listExtractedFields(h.db, caseId);
+    const appFields = fields.filter((f) =>
+      f.field_name.startsWith(APPLICATION_FIELD_PREFIX)
+    );
+    expect(appFields.length).toBeGreaterThan(0);
+    expect(
+      appFields.find((f) => f.field_name === `${APPLICATION_FIELD_PREFIX}brandName`)
+        ?.field_value
+    ).toBe("OLD TOM DISTILLERY");
+  });
+
+  it("ON-DEMAND APPLICATION non-retryable failure: finalizes failed with no verdict", async () => {
+    // The application file exists, but the model returns a non-retryable
+    // (malformed) failure extracting it => the case finalizes failed.
+    const h = await buildHarness({
+      model: createStubModel(undefined, {
+        application: { ok: false, error: "malformed", raw: "not JSON" },
+      }),
+    });
+    db = h.db;
+    const { caseId } = await seedCase(h.db, h.storage, {
+      withApplicationFields: false,
+      withApplicationFile: true,
+    });
+    await enqueueCaseJob(h.queue, caseId);
+
+    const outcome = await processCaseJob(h.deps, await claimOne(h));
+    expect(outcome.kind).toBe("failed");
+    expect((await getCase(h.db, caseId))?.status).toBe("failed");
+    expect(await listVerdicts(h.db, caseId)).toHaveLength(0);
+    expect((await listAttempts(h.db, caseId)).at(-1)?.error_class).toBe(
+      "application_unavailable"
+    );
+    // No application fields were persisted (extraction failed).
+    const appFields = (await listExtractedFields(h.db, caseId)).filter((f) =>
+      f.field_name.startsWith(APPLICATION_FIELD_PREFIX)
+    );
+    expect(appFields).toHaveLength(0);
+  });
+
   it("RETRY then DEAD-LETTER: timeout retries to the budget, then dead-letters + finalizes failed", async () => {
     const maxAttempts = 3;
     const h = await buildHarness({

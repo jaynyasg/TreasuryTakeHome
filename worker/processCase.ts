@@ -51,6 +51,7 @@ import type { WorkerDeps } from "./deps";
 import { DEFAULT_MAX_ATTEMPTS } from "./deps";
 import {
   loadApplication,
+  applicationToFields,
   ApplicationUnavailableError,
   LABEL_FIELD_PREFIX,
 } from "./application";
@@ -168,7 +169,16 @@ export async function processCaseJob(
   }
 
   // 6. Success: load application, score, persist, finalize to a scored state.
-  return scoreAndFinalize(deps, job, caseId, attemptId, result.data, labelFileId, traceId);
+  return scoreAndFinalize(
+    deps,
+    job,
+    caseId,
+    attemptId,
+    result.data,
+    labelFileId,
+    maxAttempts,
+    traceId
+  );
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -309,6 +319,7 @@ async function scoreAndFinalize(
   attemptId: string,
   label: ExtractedLabel,
   labelFileId: string | undefined,
+  maxAttempts: number,
   traceId: string | undefined
 ): Promise<CaseOutcome> {
   // Extraction succeeded: advance into the scoring stage (guarded + audited)
@@ -319,10 +330,37 @@ async function scoreAndFinalize(
   try {
     application = await loadApplication(deps.db, caseId);
   } catch (err) {
-    if (err instanceof ApplicationUnavailableError) {
-      // Extraction is impossible to score: finalize failed (not needs_review)
-      // with no misleading verdict.
-      const reason = err.message;
+    if (!(err instanceof ApplicationUnavailableError)) throw err;
+
+    // No pre-persisted `application.*` fields (the real durable-batch path: a
+    // batch started from real uploads never seeds them). Before failing, try to
+    // extract the application from its uploaded file on demand.
+    const resolved = await ensureApplication(deps, caseId);
+    if (resolved.ok) {
+      application = resolved.application;
+    } else if (resolved.retryable && job.attempts < maxAttempts) {
+      // Transient (timeout) extraction failure with budget remaining: re-arm the
+      // job with backoff and park the case in retry_wait (mirrors failExtraction's
+      // timeout branch, but from the scoring stage we already entered).
+      const delay = backoffMs(job.attempts);
+      await finalizeAttempt(deps.db, {
+        attemptId,
+        caseId,
+        attemptState: "failed",
+        errorClass: "timeout",
+        errorDetail: resolved.reason,
+        nextAttemptAt: null,
+        targetCaseState: "retry_wait",
+        auditEventId: randomUUID(),
+        traceId: traceId ?? null,
+        reason: "transient application extraction failure; scheduled retry",
+      });
+      await deps.queue.retry(job.id, delay);
+      return { kind: "retried", caseId, attempt: job.attempts, backoffMs: delay };
+    } else {
+      // Non-retryable, or the retry budget is spent: extraction is impossible to
+      // score, so finalize failed (not needs_review) with no misleading verdict.
+      const reason = resolved.reason;
       await finalizeAttempt(deps.db, {
         attemptId,
         caseId,
@@ -337,7 +375,6 @@ async function scoreAndFinalize(
       await deps.queue.ack(job.id);
       return { kind: "failed", caseId, reason };
     }
-    throw err;
   }
 
   // Mirror app/api/verify: pure deterministic scoring of the extracted label.
@@ -409,6 +446,80 @@ async function scoreAndFinalize(
     overall: targetState,
     matchPercentage: report.matchPercentage,
   };
+}
+
+/**
+ * Outcome of resolving a case's application on demand: the parsed application,
+ * or a typed failure carrying a human reason + whether it is retryable (a model
+ * timeout). The caller routes retryable failures to bounded retry and everything
+ * else (missing file/bytes, malformed/refusal/empty, contract-invalid) to a
+ * terminal `failed`.
+ */
+type EnsureApplicationOutcome =
+  | { ok: true; application: ColaApplication }
+  | { ok: false; retryable: boolean; reason: string };
+
+/**
+ * On-demand application extraction for the durable-batch path. When a case has
+ * NO pre-persisted `application.*` fields (a batch started from real uploads
+ * only stores the application's bytes, not its extracted fields), find the
+ * case's `application` case_file, load its bytes from storage, and ask the model
+ * adapter to extract a ColaApplication.
+ *
+ * On success the extracted fields are persisted via {@link insertExtractedFields}
+ * (namespaced `application.*`) so a later replay/duplicate delivery reloads them
+ * cheaply through {@link loadApplication} instead of re-calling the model.
+ *
+ * Routing of the model's discriminated result is the caller's job; this helper
+ * just maps every dead end to a typed outcome and never throws on an expected
+ * failure (missing file, missing bytes, model failure).
+ */
+async function ensureApplication(
+  deps: WorkerDeps,
+  caseId: string
+): Promise<EnsureApplicationOutcome> {
+  const file = (await listCaseFiles(deps.db, caseId)).find(
+    (f) => f.kind === "application"
+  );
+  if (!file?.object_key) {
+    return {
+      ok: false,
+      retryable: false,
+      reason: `case ${caseId} has no application file to extract`,
+    };
+  }
+
+  const obj = await deps.storage.get(file.object_key);
+  if (!obj) {
+    return {
+      ok: false,
+      retryable: false,
+      reason: `case ${caseId} application bytes are missing from storage (${file.object_key})`,
+    };
+  }
+
+  const result = await deps.model.extractApplication({
+    fileBase64: Buffer.from(obj.data).toString("base64"),
+    mimeType: obj.contentType,
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      // Only a model 'timeout' is worth retrying; malformed/refusal/empty are
+      // deterministic poison.
+      retryable: result.error === "timeout",
+      reason: `application extraction ${result.error}${result.raw ? `: ${result.raw}` : ""}`,
+    };
+  }
+
+  // Persist the extracted application fields so replay/idempotency is cheap.
+  await insertExtractedFields(
+    deps.db,
+    caseId,
+    applicationToFields(result.data, () => randomUUID())
+  );
+  return { ok: true, application: result.data };
 }
 
 /**

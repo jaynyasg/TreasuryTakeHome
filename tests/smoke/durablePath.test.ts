@@ -115,6 +115,68 @@ async function buildIntakeWithPair(
   return { intakeSessionId: session.id };
 }
 
+/**
+ * Like {@link buildIntakeWithPair}, but stores the object bytes under the EXACT
+ * key the upload route uses — `intake/{sessionId}/{fileName}` — so startBatch
+ * (which reconstructs that key for each case_file) can fetch them. This is the
+ * REAL intake path: no application fields are pre-persisted, so the worker must
+ * extract the application from its uploaded bytes on demand.
+ */
+async function buildRealIntakeWithPair(
+  db: DbClient,
+  storage: StorageAdapter,
+  caseKey: string
+): Promise<{ intakeSessionId: string }> {
+  const sessionId = `intake-real-${caseKey}`;
+  const session = await createIntakeSession(db, {
+    id: sessionId,
+    idempotencyKey: `idem-real-${caseKey}`,
+    manifestHash: `hash-real-${caseKey}`,
+  });
+
+  const appName = `${caseKey}_application.pdf`;
+  const labelName = `${caseKey}_label.png`;
+
+  // Bytes stored under the upload route's key scheme: intake/{sessionId}/{fileName}.
+  const appObj = await storage.put(
+    `intake/${sessionId}/${appName}`,
+    new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    { contentType: "application/pdf" }
+  );
+  const labelObj = await storage.put(
+    `intake/${sessionId}/${labelName}`,
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    { contentType: "image/png" }
+  );
+
+  await addManifestEntry(db, {
+    id: `me-real-${caseKey}-app`,
+    intakeSessionId: session.id,
+    fileName: appName,
+    kind: "application",
+    caseKey,
+    checksum: appObj.checksum,
+    sizeBytes: appObj.size,
+    contentType: appObj.contentType,
+    status: "uploaded",
+    objectKey: appObj.key,
+  });
+  await addManifestEntry(db, {
+    id: `me-real-${caseKey}-label`,
+    intakeSessionId: session.id,
+    fileName: labelName,
+    kind: "label",
+    caseKey,
+    checksum: labelObj.checksum,
+    sizeBytes: labelObj.size,
+    contentType: labelObj.contentType,
+    status: "uploaded",
+    objectKey: labelObj.key,
+  });
+
+  return { intakeSessionId: session.id };
+}
+
 /** Compose worker deps from shared harness parts + a chosen model. */
 function workerDeps(
   db: DbClient,
@@ -215,6 +277,46 @@ describe("durable path smoke (intake -> worker -> triage -> disposition -> expor
     const csv = new TextDecoder().decode(artifact!.data);
     expect(csv).toContain(caseId);
     expect(artifact!.contentType).toBe("text/csv");
+  });
+
+  it("REAL intake path: startBatch with NO applications arg => worker extracts the application on demand and scores", async () => {
+    // Proves R5 end-to-end offline: a durable batch started from real uploaded
+    // files (only bytes stored, no application fields seeded) now produces a
+    // SCORED case, because the worker extracts the application on demand and the
+    // case_file object_key matches the upload route's key scheme.
+    db = await migratedClient();
+    const clock = createTestClock();
+    const queue = createMemoryQueue(clock.now);
+    const storage = createFakeStorage();
+    const deps = workerDeps(db, queue, storage, createStubModel(), clock.now);
+
+    const ownerId = await seedUser(db, "reviewer");
+
+    // INTAKE -> startBatch WITHOUT an `applications` arg (the real path).
+    const { intakeSessionId } = await buildRealIntakeWithPair(db, storage, "real001");
+    const started = await startBatch(db, queue, {
+      intakeSessionId,
+      ownerUserId: ownerId,
+      // NOTE: no `applications` — application fields are NOT pre-seeded.
+    });
+    expect(started.caseCount).toBe(1);
+    const caseId = (await listCasesByBatch(db, started.batchId))[0].id;
+    expect((await getCase(db, caseId))?.status).toBe("queued");
+
+    // WORKER -> runOnce: the worker finds no application fields, extracts the
+    // application from its uploaded bytes (stub => DEFAULT_STUB_APPLICATION),
+    // scores against the stub label, and finalizes a scored state.
+    const outcomes = await runOnce(deps, { max: 10 });
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].kind).toBe("scored");
+
+    expect((await getCase(db, caseId))?.status).toBe("clean_match");
+    const verdicts = await listVerdicts(db, caseId);
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].overall).toBe("all_match");
+    expect(Number(verdicts[0].match_percent)).toBe(100);
+    expect((await listAttempts(db, caseId)).at(-1)?.state).toBe("succeeded");
+    expect(await queue.stats()).toEqual({ ready: 0, inflight: 0, deadLetter: 0 });
   });
 
   it("dead-letters a poison case, then an admin replay makes it processable again (append-only)", async () => {

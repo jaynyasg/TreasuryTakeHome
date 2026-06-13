@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ExtractedLabel } from "@/lib/contract";
+import { ColaApplication, ExtractedLabel } from "@/lib/contract";
 import { runModelContract } from "@/lib/adapters/model/contractTest";
-import { createStubModel, DEFAULT_STUB_LABEL } from "@/lib/adapters/model/stub";
+import {
+  createStubModel,
+  DEFAULT_STUB_APPLICATION,
+  DEFAULT_STUB_LABEL,
+} from "@/lib/adapters/model/stub";
 
 /**
  * Runs the shared model-adapter contract against the stub adapter. The stub is
@@ -13,6 +17,12 @@ runModelContract("createStubModel", () => createStubModel(), {
   malformed: { makeAdapter: () => createStubModel({ ok: false, error: "malformed", raw: "not json" }) },
   refusal: { makeAdapter: () => createStubModel({ ok: false, error: "refusal", raw: "Model refused: policy" }) },
   empty: { makeAdapter: () => createStubModel({ ok: false, error: "empty" }) },
+  validApplication: { makeAdapter: () => createStubModel() },
+  failingApplication: {
+    makeAdapter: () =>
+      createStubModel(undefined, { application: { ok: false, error: "timeout" } }),
+    error: "timeout",
+  },
 });
 
 describe("createStubModel defaults & passthrough", () => {
@@ -36,5 +46,27 @@ describe("createStubModel defaults & passthrough", () => {
     const a = await adapter.extractLabel({ imageBase64: "aGk=", mimeType: "image/png" });
     const b = await adapter.extractLabel({ imageBase64: "Ynll", mimeType: "image/jpeg" });
     expect(a).toEqual(b);
+  });
+
+  it("extractApplication defaults to a contract-valid application consistent with the label", async () => {
+    const result = await createStubModel().extractApplication({
+      fileBase64: "aGk=",
+      mimeType: "application/pdf",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok:true");
+    expect(ColaApplication.safeParse(result.data).success).toBe(true);
+    // Consistent with DEFAULT_STUB_LABEL so a default stub scores a clean match.
+    expect(result.data.brandName).toBe(DEFAULT_STUB_LABEL.brandName);
+    expect(result.data).toEqual(DEFAULT_STUB_APPLICATION);
+  });
+
+  it("extractApplication honors a configured failure override without throwing", async () => {
+    const result = await createStubModel(undefined, {
+      application: { ok: false, error: "malformed", raw: "bad app json" },
+    }).extractApplication({ fileBase64: "aGk=", mimeType: "application/pdf" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected ok:false");
+    expect(result.error).toBe("malformed");
   });
 });
