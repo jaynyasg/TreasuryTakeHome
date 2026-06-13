@@ -6,7 +6,7 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, ".") },
   },
   test: {
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "components/**/*.test.ts"],
     // PGlite (in-process WASM Postgres) cold-starts a fresh instance per DB
     // test. Under Vitest's parallel workers many instances initialize at once,
     // so a fresh PGlite boot can exceed the 10s default. Raise the hook/test

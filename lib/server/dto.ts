@@ -95,9 +95,44 @@ export interface CaseFieldDTO {
 }
 
 /**
- * Decision-first Case Detail payload (plan: "Case detail IA"). Carries the
- * machine verdict and the field comparison; richer evidence (timeline, warning
- * crop, dispositions) layers on in later Stage 7/8 waves.
+ * A view-safe entry on the Case Detail evidence timeline. Merges processing
+ * attempts, dispositions, and audit events into one chronological shape the page
+ * maps 1:1 onto `TimelineEntryView`. Pure presentation — no raw rows, no jsonb
+ * summaries; just the fields the timeline component renders.
+ */
+export interface TimelineEntryDTO {
+  /** Stable id for React keys. */
+  id: string;
+  /** ISO-8601 timestamp the entry is sorted by. */
+  at: string;
+  /** Coarse source kind. `state_change` is an audit event that changed status. */
+  kind: "attempt" | "disposition" | "audit" | "state_change";
+  /** Short machine action code (e.g. "scoring.succeeded", "disposition.reject"). */
+  action: string;
+  /** Human-readable one-line description. */
+  summary: string;
+  /** Actor user id, when a person performed the event. */
+  actorUserId?: string | null;
+  /** Reason note attached to the event, when present. */
+  reason?: string | null;
+}
+
+/** A source file attached to the case, view-safe (file id, not object key). */
+export interface SourceFileDTO {
+  id: string;
+  /** "application" | "label" | other — drives the icon. */
+  role: string;
+  /** Display name (file name, or object-key basename, or the id). */
+  name: string;
+}
+
+/**
+ * Decision-first Case Detail payload (plan: "Case detail IA"). Wave 1 carried
+ * only case identity + machine status; the optional rich slices below mirror
+ * `CaseDetailView` (machine verdict, field comparison, warning evidence,
+ * timeline, source files, disposition) so the page maps them 1:1. Every rich
+ * slice is OPTIONAL and additive — existing Work Queue / Batch Detail consumers
+ * are unaffected, and the page degrades gracefully when a slice is absent.
  */
 export interface CaseDetailDTO {
   caseId: string;
@@ -111,4 +146,35 @@ export interface CaseDetailDTO {
   assignedUserId: string | null;
   assignedToMe: boolean;
   updatedAt: string;
+
+  // --- optional rich evidence slices (Wave 2) ------------------------------
+
+  /** Machine overall verdict label + match % + summary, when a verdict exists. */
+  machine?: {
+    overall: "all_match" | "needs_review" | "has_mismatches" | null;
+    matchPercentage: number | null;
+    summary: string | null;
+  };
+  /** Per-field application-vs-label comparison rows from the verdict payload. */
+  fields?: CaseFieldDTO[];
+  /** GOVERNMENT WARNING evidence; null when none captured for the case. */
+  warning?: {
+    cropFileId: string | null;
+    leadInDetected: boolean | null;
+    boldnessConfidence: number | null;
+    uncertaintyReason: string | null;
+    verdict: string | null;
+  } | null;
+  /** Merged chronological timeline (attempts + dispositions + audit). */
+  timeline?: TimelineEntryDTO[];
+  /** Source files attached to the case. */
+  sourceFiles?: SourceFileDTO[];
+  /** Most-recent recorded disposition; null when none recorded. */
+  disposition?: {
+    action: "approve" | "reject" | "request_better_image";
+    actorUserId: string;
+    at: string;
+    reason: string | null;
+    includedInExport: boolean;
+  } | null;
 }

@@ -61,18 +61,22 @@ export default async function CaseDetailPage({
     return <CaseErrorView caseId={id} />;
   }
 
-  // Compose the decision-first view from the DTO we have. Evidence slices are
-  // intentionally omitted (DTO gap, above); components degrade gracefully.
+  // Compose the decision-first view from the now-richer DTO. Each evidence slice
+  // maps 1:1 from the DTO; when the query layer did not populate a slice (no
+  // verdict yet, no warning evidence, etc.) it falls through to the
+  // status-derived advisory verdict / undefined, and the components degrade
+  // gracefully.
   const view: CaseDetailView = {
     dto,
-    // Derive a coarse machine "overall" from the case status so the advisory
-    // verdict label is meaningful even before the verdict payload is surfaced.
-    machine: deriveMachine(dto),
-    fields: undefined,
-    warning: undefined,
-    timeline: undefined,
-    sourceFiles: undefined,
-    disposition: undefined,
+    // Prefer the real machine verdict (overall + match % + summary) when the
+    // query layer surfaced one; otherwise derive a coarse "overall" from the
+    // case status so the advisory label is still meaningful.
+    machine: dto.machine ?? deriveMachine(dto),
+    fields: dto.fields,
+    warning: dto.warning ?? undefined,
+    timeline: dto.timeline,
+    sourceFiles: dto.sourceFiles,
+    disposition: dto.disposition ?? undefined,
     stale: false,
   };
 

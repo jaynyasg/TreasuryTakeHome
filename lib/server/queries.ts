@@ -4,6 +4,18 @@ import { authorizeBatchAccess, type Principal } from "@/lib/auth/authorize";
 import { getCase } from "@/lib/db/repositories/cases";
 import { getBatch } from "@/lib/db/repositories/batches";
 import { getLatestVerdict } from "@/lib/db/repositories/verdicts";
+import { getWarningEvidence } from "@/lib/db/repositories/warningEvidence";
+import {
+  getLatestDisposition,
+  listDispositions,
+} from "@/lib/db/repositories/dispositions";
+import { listAuditEvents } from "@/lib/db/repositories/auditEvents";
+import { listAttempts } from "@/lib/db/repositories/processingAttempts";
+import { listCaseFiles } from "@/lib/db/repositories/caseFiles";
+import {
+  verdictPayloadToFields,
+  mergeTimeline,
+} from "@/lib/server/caseDetailMappers";
 import { FieldVerdict } from "@/lib/contract";
 import type { CaseState } from "@/lib/core/state/case";
 import type { CaseSeverity } from "@/lib/db/repositories/cases";
@@ -210,6 +222,78 @@ export async function getCaseDetail(
 
     const batch = await getBatch(db, row.batch_id);
 
+    // Assemble the rich evidence slices within the same pool. Each read is
+    // independent of the others, so fetch them concurrently.
+    const [verdict, warningRow, files, attempts, dispositions, audits, latestDisposition] =
+      await Promise.all([
+        getLatestVerdict(db, caseId),
+        getWarningEvidence(db, caseId),
+        listCaseFiles(db, caseId),
+        listAttempts(db, caseId),
+        listDispositions(db, caseId),
+        listAuditEvents(db, "case", caseId),
+        getLatestDisposition(db, caseId),
+      ]);
+
+    // machine: latest verdict overall / match % / summary. match_percent comes
+    // back from PG numeric as a string — coerce to a finite number or null.
+    const machine = verdict
+      ? {
+          overall: toMachineOverall(verdict.overall),
+          matchPercentage: coerceNumber(verdict.match_percent),
+          summary: extractSummary(verdict.payload),
+        }
+      : undefined;
+
+    // fields: parse the verdict payload (untrusted jsonb) into validated rows.
+    const fields = verdict ? verdictPayloadToFields(verdict.payload) : undefined;
+
+    // warning: map the warning-evidence row. cropFileId points at the case's
+    // LABEL file so the reviewer sees the label image alongside the boldness /
+    // lead-in / uncertainty metadata. A dedicated cropped-region endpoint that
+    // serves just the warning bounding box is a future enhancement; the
+    // substantive evidence here is the boldness/lead-in/uncertainty/verdict
+    // metadata, not the crop framing.
+    const labelFile = files.find((f) => f.kind === "label") ?? null;
+    const warning = warningRow
+      ? {
+          cropFileId: labelFile?.id ?? null,
+          leadInDetected: warningRow.lead_in_detected,
+          boldnessConfidence: coerceNumber(warningRow.boldness_confidence),
+          uncertaintyReason: warningRow.uncertainty_reason,
+          verdict: warningRow.verdict,
+        }
+      : null;
+
+    // timeline: merge attempts + dispositions + audit events, sorted ascending.
+    const timeline = mergeTimeline({
+      attempts,
+      dispositions,
+      audits,
+    });
+
+    // sourceFiles: file id + role (kind) + display name (file name unavailable
+    // on the manifest row, so fall back to the object-key basename, then id).
+    const sourceFiles = files.map((f) => ({
+      id: f.id,
+      role: f.kind,
+      name: basename(f.object_key) ?? f.id,
+    }));
+
+    // disposition: the most-recent recorded disposition, if any. includedInExport
+    // defaults to false — the audit-export snapshot membership is not derivable
+    // from the disposition row alone, so we leave it false until an export-status
+    // read is wired (future enhancement).
+    const disposition = latestDisposition
+      ? {
+          action: latestDisposition.action,
+          actorUserId: latestDisposition.actor_user_id,
+          at: latestDisposition.created_at,
+          reason: latestDisposition.reason,
+          includedInExport: false,
+        }
+      : null;
+
     return {
       caseId: row.id,
       batchId: row.batch_id,
@@ -222,6 +306,15 @@ export async function getCaseDetail(
       assignedUserId: row.assigned_user_id,
       assignedToMe: row.assigned_user_id === principal.userId,
       updatedAt: row.updated_at,
+      machine,
+      fields,
+      warning,
+      timeline,
+      sourceFiles,
+      disposition,
+      // stale: left undefined — optimistic-concurrency stale detection (an
+      // external party changing the case after this view loaded) is a later
+      // enhancement; nothing here can determine it yet.
     };
   } finally {
     await db.close();
@@ -237,6 +330,46 @@ function clampLimit(limit?: number): number {
 
 function toQueueSeverity(severity: CaseSeverity | null): QueueSeverity {
   return severity ?? "none";
+}
+
+/** Narrow a verdict's free-form `overall` to the view's advisory vocabulary. */
+function toMachineOverall(
+  overall: string | null
+): "all_match" | "needs_review" | "has_mismatches" | null {
+  switch (overall) {
+    case "all_match":
+    case "needs_review":
+    case "has_mismatches":
+      return overall;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Coerce a PG numeric (returned as a string) — or an already-numeric value — to
+ * a finite number, or null when absent/unparseable. Used for match_percent and
+ * the warning boldness confidence.
+ */
+function coerceNumber(value: number | string | null): number | null {
+  if (value === null) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Pull the human-readable `summary` from an untrusted verdict payload, if any. */
+function extractSummary(payload: unknown): string | null {
+  if (isRecord(payload) && typeof payload.summary === "string") {
+    return payload.summary;
+  }
+  return null;
+}
+
+/** Basename of an object key (last path segment), or null when absent/empty. */
+function basename(objectKey: string | null): string | null {
+  if (!objectKey) return null;
+  const parts = objectKey.split(/[/\\]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : null;
 }
 
 /**
