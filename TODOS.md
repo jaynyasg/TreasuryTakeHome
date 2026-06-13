@@ -1,34 +1,26 @@
 # TODOS
 
-## P3 — Server-side batch queue with progress streaming and persistence
-- **What:** Move the 50/300-case batch fan-out from client-side `runBatch` to a durable
-  server-side queue with progress streaming, persisted results, and job recovery.
-- **Why:** The production shape of the "morning queue" story — survives tab close,
-  durable audit trail, recoverable jobs. Explicitly deferred from the 2026-06-10
-  cathedral plan as infra-grade work.
-- **Pros:** Completes the agent-queue vision honestly; removes the beforeunload guard
-  and in-flight-billing caveats.
-- **Cons:** Real infrastructure (queue + storage) — beyond prototype scope; new ops surface.
-- **Context:** Client fan-out at concurrency 6 with bounded retry ships in the cathedral
-  plan (AC-3). This TODO is its successor. Cancel semantics, retry classification, and
-  the CSV schema from AC-3/AC-5 carry over unchanged.
-- **Effort:** L (human ~1 week / CC ~M)
-- **Depends on:** cathedral plan AC-3 landing.
-- **Source:** /plan-ceo-review 2026-06-10 (deferred by design; see
-  ~/.gstack/projects/jaygodfrey-treasurytakehome/ceo-plans/2026-06-10-cathedral-push.md)
+## DONE — Durable server-side batch (was P3, implemented 2026-06-13)
+- **What:** The durable server-side batch path from the locked `docs/designs/production-gap-closure.md`
+  plan is now implemented behind the `DURABLE_BATCH` feature flag: Postgres persistence
+  (`lib/db/`), poll-mode worker (`worker/`), queue/storage/model adapters (`lib/adapters/`),
+  durable intake concierge (`lib/intake/`), Auth.js reviewer/admin, and the ops console.
+- **Remaining sub-feature:** live client-side progress *streaming* (SSE/websocket push of batch
+  progress to the browser) is not built — the reviewer Work Queue + Operations console poll/refresh
+  instead. Real-time push remains a future enhancement.
+- **Source:** /goal staged execution 2026-06-13 (Stages 2–9). Superseded the original P3 TODO.
 
-## P3 — Operational design system notes for production reviewer/admin screens
-- **What:** Create a short `DESIGN.md` for production operational screens, covering density,
-  table/list styling, status colors, focus states, accessibility rules, and how to use the
-  house-style tokens/components.
-- **Why:** The repo has house-style primitives, but the durable batch plan adds denser
-  reviewer/admin workspaces that need shared design rules before implementation spreads
-  one-off components.
-- **Pros:** Keeps Work Queue, Case Detail, Intake, Ops, and Retention visually consistent;
-  gives future implementers a stable reference for accessibility and status semantics.
-- **Cons:** Adds a small documentation task before or during implementation.
-- **Context:** Surfaced by `/plan-design-review` on 2026-06-13 while reviewing
-  `docs/designs/production-gap-closure.md`; the plan now includes a reuse map, but this
-  follow-up captures the broader reusable design-system artifact.
-- **Depends on / blocked by:** Production reviewer/admin UI implementation starting, or a
-  dedicated design-system pass.
+## DONE — Operational design system notes (was P3, implemented 2026-06-13)
+- **What:** `DESIGN.md` now codifies house-style usage for the reviewer/admin operational screens —
+  density, table/list styling, status colors (severity never color-only), focus states, and the
+  accessibility rules. Resolves the design-debt note from `/plan-design-review`.
+- **Source:** Stage 10 / design task D5.
+
+## Future enhancements (not blocking)
+- Live progress streaming (SSE) for durable batches (see above).
+- Live Playwright browser E2E suite (a deterministic offline E2E smoke exists at
+  `tests/smoke/durablePath.test.ts`; browser wiring is deferred per `docs/designs/stage-1-preflight.md` §4).
+- Dedicated cropped-region endpoint for warning evidence (currently the label image is served as
+  evidence context alongside the boldness/lead-in metadata).
+- Worker heartbeat + measured model-spend readers wired into `getOpsHealth` (currently injectable
+  defaults).
