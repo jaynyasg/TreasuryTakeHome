@@ -22,6 +22,11 @@ Rules:
 - netContents: as printed, e.g. "750 mL".
 - governmentWarning.text: the COMPLETE warning statement verbatim, including its heading, preserving the exact capitalization printed on the label.
 - governmentWarning.headingStyle: "all_caps" only if the "GOVERNMENT WARNING:" lead-in is printed entirely in capital letters; "title_case" if written like "Government Warning:"; otherwise "other".
+- governmentWarning typography evidence (the lead-in must be BOLD per 27 CFR Part 16). Report these ONLY for the "GOVERNMENT WARNING:" lead-in words, and be honest about uncertainty — bold weight is hard to judge on imperfect images:
+  - leadInDetected: true if you can locate the "GOVERNMENT WARNING:" lead-in segment on the label at all; false if not; null if unsure.
+  - boldnessConfidence: a number 0-1 for how confident you are the lead-in is actually printed in BOLD (heavier weight than the body). Use a high value (e.g. 0.9+) only when the bold weight is clearly visible; use a low value (e.g. <0.6) when blur, glare, low resolution, or a thin/uniform font make boldness genuinely uncertain. Use null if you cannot assess it at all.
+  - boldnessUncertaintyReason: a short phrase explaining any low confidence (e.g. "image too blurry to judge weight", "font weight looks uniform with body"); null when confident.
+  - region: the approximate normalized bounding box of the whole warning text as {x, y, width, height}, each 0-1 relative to the image (x,y = top-left corner). Use null if you cannot locate it.
 - readability: "clear" if you can read the whole label confidently; "partial" if glare/angle/blur makes some regions uncertain; "unreadable" if most of it cannot be read.
 - HONESTY OVER COMPLETENESS: if blur, glare, rotation, perspective, or shadow leaves you less than certain of the EXACT characters in a field (especially numbers like alcohol % and net contents), set that field to null and readability to "partial" — NEVER guess. A guessed number presented as fact is the worst possible output; a null with readability "partial" is the correct answer for an unreadable region.`;
 

@@ -168,7 +168,7 @@ export async function processCaseJob(
   }
 
   // 6. Success: load application, score, persist, finalize to a scored state.
-  return scoreAndFinalize(deps, job, caseId, attemptId, result.data, traceId);
+  return scoreAndFinalize(deps, job, caseId, attemptId, result.data, labelFileId, traceId);
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -308,6 +308,7 @@ async function scoreAndFinalize(
   caseId: string,
   attemptId: string,
   label: ExtractedLabel,
+  labelFileId: string | undefined,
   traceId: string | undefined
 ): Promise<CaseOutcome> {
   // Extraction succeeded: advance into the scoring stage (guarded + audited)
@@ -343,6 +344,19 @@ async function scoreAndFinalize(
   const report = buildMatchReport(application, label);
   const targetState = overallToCaseState(report.overall);
 
+  // Warning evidence crop: when the GOVERNMENT WARNING check is uncertain we
+  // want a visual artifact the reviewer can open. Real region-based cropping is
+  // a UI/image-pipeline concern not available in the worker/offline harness, so
+  // we store the ORIGINAL label bytes under a stable evidence key and record the
+  // normalized `region` in the verdict payload (engine already carries the
+  // reason). The reviewer UI crops to `region` at display time. Done OUTSIDE the
+  // DB transaction so a storage hiccup never rolls back the verdict.
+  const warning = report.verdicts.find((v) => v.field === "governmentWarning");
+  let cropObjectKey: string | null = null;
+  if (warning && warning.status === "needs_review") {
+    cropObjectKey = await storeWarningCrop(deps, caseId, labelFileId);
+  }
+
   // Persist label fields + verdict (+ warning evidence) in one unit of work,
   // then finalize the attempt and transition the case in a second guarded unit.
   await deps.db.transaction(async (tx) => {
@@ -357,15 +371,19 @@ async function scoreAndFinalize(
     });
 
     // Warning evidence: when the GOVERNMENT WARNING check is itself uncertain
-    // (engine emitted needs_review for it), store an evidence row so the
-    // reviewer can inspect the typography uncertainty.
-    const warning = report.verdicts.find((v) => v.field === "governmentWarning");
+    // (engine emitted needs_review for it — e.g. unconfirmed lead-in boldness),
+    // store an evidence row so the reviewer can inspect the typography
+    // uncertainty. Prefer the model's own typography signals where supplied,
+    // falling back to presence/verdict reason for legacy extractions.
     if (warning && warning.status === "needs_review") {
+      const gw = label.governmentWarning;
       await insertWarningEvidence(tx, {
         id: randomUUID(),
         caseId,
-        leadInDetected: label.governmentWarning.present,
-        uncertaintyReason: warning.reason,
+        cropObjectKey,
+        leadInDetected: gw.leadInDetected ?? gw.present,
+        boldnessConfidence: gw.boldnessConfidence ?? null,
+        uncertaintyReason: gw.boldnessUncertaintyReason ?? warning.reason,
         verdict: "needs_review",
       });
     }
@@ -391,6 +409,38 @@ async function scoreAndFinalize(
     overall: targetState,
     matchPercentage: report.matchPercentage,
   };
+}
+
+/**
+ * Store a warning-evidence crop and return its object key, or null if no source
+ * bytes are available. Offline / in the worker we cannot run a real image crop,
+ * so we copy the original label bytes to a stable evidence key
+ * (`evidence/{caseId}/warning-crop`); the normalized `region` recorded with the
+ * verdict lets the reviewer UI crop at display time. Storage failures degrade to
+ * null (the evidence row + reason still record the uncertainty) — never throw,
+ * so an evidence hiccup can't fail an otherwise-scored case.
+ */
+async function storeWarningCrop(
+  deps: WorkerDeps,
+  caseId: string,
+  labelFileId: string | undefined
+): Promise<string | null> {
+  try {
+    const file = labelFileId
+      ? await getCaseFile(deps.db, labelFileId)
+      : (await listCaseFiles(deps.db, caseId)).find((f) => f.kind === "label") ??
+        null;
+    if (!file?.object_key) return null;
+    const obj = await deps.storage.get(file.object_key);
+    if (!obj) return null;
+
+    const cropKey = `evidence/${caseId}/warning-crop`;
+    await deps.storage.put(cropKey, obj.data, { contentType: obj.contentType });
+    return cropKey;
+  } catch {
+    // Evidence is best-effort; the verdict + reason already capture the concern.
+    return null;
+  }
 }
 
 /** Flatten an extracted label into namespaced `extracted_fields` rows. */

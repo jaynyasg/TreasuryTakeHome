@@ -69,6 +69,28 @@
         "flaggedFields": ["classType"],
         "warningStatus": "match"
       }
+    },
+    {
+      "id": "santa_fe_warning_uncertain_boldness",
+      "kind": "real",
+      "comment": "T6 / R7+R11: warning is word-for-word and all-caps, but the model reports LOW boldnessConfidence (0.3) for the lead-in. The engine must route the warning to needs_review (visual evidence, not a false match), flipping overall to needs_review. Deterministic offline fixture — exercises the uncertain-boldness path without a live LLM call.",
+      "images": ["labelexample2_p2_0.jpg"],
+      "application": {
+        "serialNumber": "100010",
+        "beverageType": "distilled_spirits",
+        "sourceOfProduct": "domestic",
+        "brandName": "SANTA FE SPIRITS",
+        "classType": "Straight Malt Whiskey",
+        "alcoholContent": "46%",
+        "netContents": "750 MILLILITERS",
+        "applicantNameAddress": "SANTA FE DISTILLERY, L.L.C., 7505 MALLARD WAY UNIT 1, SANTA FE NM 87506, SANTA FE SPIRITS"
+      },
+      "expect": {
+        "overall": "needs_review",
+        "minMatch": 80,
+        "flaggedFields": [],
+        "warningStatus": "needs_review"
+      }
     }
   ],
   "degradedCases": [

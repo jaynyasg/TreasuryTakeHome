@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { DbClient } from "@/lib/db/client";
 import type { QueueJob } from "@/lib/adapters/queue/types";
 
-import { createStubModel } from "@/lib/adapters/model/stub";
+import { createStubModel, DEFAULT_STUB_LABEL } from "@/lib/adapters/model/stub";
 import { getCase } from "@/lib/db/repositories/cases";
 import { listVerdicts } from "@/lib/db/repositories/verdicts";
 import { listExtractedFields } from "@/lib/db/repositories/extractedFields";
 import { listAttempts } from "@/lib/db/repositories/processingAttempts";
 import { listAuditEvents } from "@/lib/db/repositories/auditEvents";
-import { listNeedsReviewWarnings } from "@/lib/db/repositories/warningEvidence";
+import {
+  listNeedsReviewWarnings,
+  getWarningEvidence,
+} from "@/lib/db/repositories/warningEvidence";
 
 import { processCaseJob } from "@/worker/processCase";
 import { LABEL_FIELD_PREFIX, APPLICATION_FIELD_PREFIX } from "@/worker/application";
@@ -250,6 +253,52 @@ describe("processCaseJob", () => {
     } else {
       expect(forCase).toHaveLength(0);
     }
+  });
+
+  it("WARNING low boldness: routes needs_review and writes enriched evidence row", async () => {
+    // Extraction is otherwise a clean match, but the model is UNSURE the
+    // GOVERNMENT WARNING lead-in is bold (low confidence). The engine routes the
+    // warning verdict to needs_review, so the worker must finalize the case to
+    // needs_review AND write a warning_evidence row populated from the model's
+    // typography signals (+ a crop key copied from the original label bytes).
+    const uncertainLabel = {
+      ...DEFAULT_STUB_LABEL,
+      governmentWarning: {
+        ...DEFAULT_STUB_LABEL.governmentWarning,
+        leadInDetected: true,
+        boldnessConfidence: 0.3,
+        boldnessUncertaintyReason: "image too blurry to judge weight",
+        region: { x: 0.1, y: 0.7, width: 0.8, height: 0.2 },
+      },
+    };
+    const h = await buildHarness({ model: createStubModel(uncertainLabel) });
+    db = h.db;
+    const { caseId } = await seedCase(h.db, h.storage);
+    await enqueueCaseJob(h.queue, caseId);
+
+    const outcome = await processCaseJob(h.deps, await claimOne(h));
+    expect(outcome.kind).toBe("needs_review");
+    expect((await getCase(h.db, caseId))?.status).toBe("needs_review");
+
+    // A verdict IS persisted here (scoring succeeded; the warning field alone is
+    // needs_review) — distinct from the malformed-extraction no-verdict path.
+    expect(await listVerdicts(h.db, caseId)).toHaveLength(1);
+
+    // Enriched evidence row written with the model's boldness signals + crop key.
+    const evidence = await getWarningEvidence(h.db, caseId);
+    expect(evidence).not.toBeNull();
+    expect(evidence?.verdict).toBe("needs_review");
+    expect(evidence?.lead_in_detected).toBe(true);
+    expect(Number(evidence?.boldness_confidence)).toBe(0.3);
+    expect(evidence?.uncertainty_reason).toBe("image too blurry to judge weight");
+    expect(evidence?.crop_object_key).toBe(`evidence/${caseId}/warning-crop`);
+
+    // The crop placeholder really exists in storage (original bytes copied).
+    expect(await h.storage.get(`evidence/${caseId}/warning-crop`)).not.toBeNull();
+
+    // Surfaces in the needs-review warning work queue.
+    const queue = await listNeedsReviewWarnings(h.db);
+    expect(queue.some((w) => w.case_id === caseId)).toBe(true);
   });
 
   it("DUPLICATE delivery: a case already scored is skipped, not re-scored", async () => {

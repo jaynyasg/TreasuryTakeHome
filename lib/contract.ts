@@ -54,6 +54,32 @@ export const ExtractedLabel = z.object({
     /** Verbatim text as it appears, including the heading. */
     text: z.string().nullable(),
     headingStyle: z.enum(["all_caps", "title_case", "other"]).nullable(),
+    /**
+     * Hybrid typography signal (production-gap-closure "Warning typography
+     * strategy"). All OPTIONAL + nullable so existing extractions/fixtures that
+     * predate the field still parse and produce IDENTICAL verdicts — the engine
+     * only routes on these when the model actually supplies them.
+     *
+     * Model's confidence (0-1) that the "GOVERNMENT WARNING:" lead-in is
+     * rendered BOLD on the label. Low confidence (below the engine threshold)
+     * routes an otherwise-correct warning to needs_review with visual evidence
+     * instead of a false match/reject.
+     */
+    boldnessConfidence: z.number().min(0).max(1).nullable().optional(),
+    /** Short plain-language reason the model is unsure the lead-in is bold. */
+    boldnessUncertaintyReason: z.string().nullable().optional(),
+    /** Whether the model could locate the lead-in segment at all. */
+    leadInDetected: z.boolean().nullable().optional(),
+    /** Normalized 0-1 crop box of the warning text, for the evidence crop. */
+    region: z
+      .object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        width: z.number().min(0).max(1),
+        height: z.number().min(0).max(1),
+      })
+      .nullable()
+      .optional(),
   }),
   /** Model's own read-quality judgment; drives needs_review verdicts. */
   readability: z.enum(["clear", "partial", "unreadable"]),
