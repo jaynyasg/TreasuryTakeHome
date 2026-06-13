@@ -7,6 +7,11 @@
  *
  * NOT part of `npm run verify` — touches a live database.
  */
+// tsx (unlike `next dev`) does not auto-load .env.local, so load it explicitly
+// using Next's own env loader before reading DATABASE_URL / SEED_* vars.
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd());
+
 import { createPgPool } from "@/lib/db/pg";
 import { runMigrations } from "@/lib/db/migrate";
 import { seedUsers } from "@/lib/db/seed";

@@ -11,6 +11,12 @@
  *
  * Worker-safe: uses node:http, shared core, and adapters; NO next/react.
  */
+// Load .env.local for local runs (tsx does not auto-load it like `next dev`).
+// On a real host, platform env vars are already set and the .env files are
+// absent, so this is a harmless no-op there.
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd());
+
 import { createServer } from "node:http";
 import { buildProductionDeps } from "./deps";
 import { runWorkerLoop } from "./loop";
