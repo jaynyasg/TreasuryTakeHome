@@ -13,6 +13,7 @@
     "eval": "tsx scripts/eval.ts",
     "eval:live": "tsx scripts/eval.ts --live",
     "seed": "tsx scripts/seed.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts",
     "worker": "tsx worker/index.ts",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run eval"
   },
