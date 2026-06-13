@@ -12,10 +12,12 @@
     "test:watch": "vitest",
     "eval": "tsx scripts/eval.ts",
     "eval:live": "tsx scripts/eval.ts --live",
+    "seed": "tsx scripts/seed.ts",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run eval"
   },
   "dependencies": {
     "next": "^15.3.0",
+    "next-auth": "^5.0.0-beta.31",
     "openai": "^4.96.0",
     "pg": "^8.21.0",
     "react": "^19.1.0",
