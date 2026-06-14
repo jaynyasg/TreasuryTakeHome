@@ -69,6 +69,7 @@ describe("runOnce", () => {
         }
         return goodLabel.extractLabel(input);
       },
+      extractApplication: (input) => goodLabel.extractApplication(input),
     };
 
     const h = await buildHarness({ model: routingModel });
