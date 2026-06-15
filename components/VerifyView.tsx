@@ -528,9 +528,15 @@ function BusyPanel({ step }: { step: number }) {
 
 function EmptyResults() {
   return (
-    <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-surface/40 text-center">
-      <div className="max-w-[280px] text-[13px] leading-relaxed text-muted">
-        Verify an application + label set, or upload full COLA applications, and results will appear here.
+    <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-card/65 px-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+      <div className="max-w-[320px]">
+        <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-muted">
+          <Sparkles size={14} />
+        </div>
+        <div className="text-[13px] font-semibold text-ink">No report yet</div>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+          Verify an application + label set, or upload full COLA applications, and the report will appear here.
+        </p>
       </div>
     </div>
   );

@@ -20,7 +20,14 @@
     min-height: 100vh;
   }
   ::selection {
-    background: rgba(70, 83, 111, 0.2);
+    background: rgba(186, 132, 44, 0.26);
+    color: #1c1916;
+    text-shadow: none;
+  }
+  ::-moz-selection {
+    background: rgba(186, 132, 44, 0.26);
+    color: #1c1916;
+    text-shadow: none;
   }
 }
 

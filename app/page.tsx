@@ -17,14 +17,16 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      <header className="relative overflow-hidden border-b border-line bg-card/60">
+      <header className="relative overflow-hidden border-b border-line bg-card/80 backdrop-blur-[2px]">
         <div aria-hidden className="dot-grid absolute inset-0" />
         <div className="relative mx-auto max-w-6xl px-5 pb-5 pt-8">
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent">
             TTB · Label Compliance Prototype
           </div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Label Verify</h1>
-          <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted">
+          <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-tight text-ink">
+            Label Verify
+          </h1>
+          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-ink-2">
             Checks what&apos;s printed on an alcohol beverage label against its COLA
             application — every field, with a reason for every result.
           </p>
