@@ -31,6 +31,11 @@ verdicts with reasons) + generate mock application/label pairs. Full brief: `PRD
   GOVERNMENT WARNING check (all-caps lead-in), fuzzy brand matching with explanations,
   UI simple enough for non-technical users.
 
+## Documented solutions
+`docs/solutions/` — solutions to past problems (bugs, patterns, conventions), organized by
+category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing
+or debugging in documented areas.
+
 ## Skill routing
 
 When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
