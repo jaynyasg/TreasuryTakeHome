@@ -20,14 +20,14 @@
     min-height: 100vh;
   }
   ::selection {
-    background: rgba(186, 132, 44, 0.26);
-    color: #1c1916;
-    text-shadow: none;
+    background: rgba(186, 132, 44, 0.26) !important;
+    color: #1c1916 !important;
+    text-shadow: none !important;
   }
   ::-moz-selection {
-    background: rgba(186, 132, 44, 0.26);
-    color: #1c1916;
-    text-shadow: none;
+    background: rgba(186, 132, 44, 0.26) !important;
+    color: #1c1916 !important;
+    text-shadow: none !important;
   }
 }
 

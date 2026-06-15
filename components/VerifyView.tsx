@@ -528,7 +528,7 @@ function BusyPanel({ step }: { step: number }) {
 
 function EmptyResults() {
   return (
-    <div className="flex min-h-[300px] items-center justify-center rounded-card border border-dashed border-line bg-card/65 px-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+    <div className="flex min-h-[300px] select-none items-center justify-center rounded-card border border-dashed border-line bg-card/65 px-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
       <div className="max-w-[320px]">
         <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-muted">
           <Sparkles size={14} />
