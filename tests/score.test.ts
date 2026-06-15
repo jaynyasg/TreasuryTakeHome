@@ -134,6 +134,55 @@ describe("match report scoring (C3)", () => {
     expect(abv?.reason).toMatch(/45|40/);
   });
 
+  it("routes suspicious small wine ABV OCR disagreements to review when identity fields all match", () => {
+    const wineApp: ColaApplication = {
+      ...application,
+      beverageType: "wine",
+      brandName: "OTIUM CELLARS",
+      classType: "Pinot Gris",
+      alcoholContent: "12",
+      applicantNameAddress: "OTIUM CELLARS, WATERFORD, VIRGINIA",
+      wineAppellation: "LOUDOUN COUNTY VIRGINIA",
+      wineVintage: "2009",
+    };
+    const report = buildMatchReport(wineApp, {
+      ...cleanLabel,
+      brandName: "OTIUM CELLARS",
+      classType: "Pinot Gris",
+      alcoholContent: "10% ALC./VOL.",
+      producerNameAddress: "PRODUCED & BOTTLED BY OTIUM CELLARS, WATERFORD, VIRGINIA",
+      wineAppellation: "LOUDOUN COUNTY, VIRGINIA",
+      wineVintage: "2009",
+    });
+    const abv = report.verdicts.find((v) => v.field === "alcoholContent");
+    expect(abv?.status).toBe("needs_review");
+    expect(abv?.reason.toLowerCase()).toContain("ocr");
+    expect(report.overall).toBe("needs_review");
+  });
+
+  it("keeps small ABV differences as mismatches when wine identity evidence is incomplete", () => {
+    const wineApp: ColaApplication = {
+      ...application,
+      beverageType: "wine",
+      brandName: "8 CHAINS NORTH",
+      classType: "Cabernet Sauvignon",
+      alcoholContent: "11.5",
+      applicantNameAddress: "8 CHAINS NORTH, 354 MARKET ST, PORTLAND OR 97209",
+      wineVintage: "2022",
+    };
+    const report = buildMatchReport(wineApp, {
+      ...cleanLabel,
+      brandName: "8 CHAINS NORTH",
+      classType: "Cabernet Sauvignon",
+      alcoholContent: "13% ALC./VOL.",
+      producerNameAddress: "8 CHAINS NORTH, PORTLAND, OR",
+      wineVintage: "2022",
+    });
+    const abv = report.verdicts.find((v) => v.field === "alcoholContent");
+    expect(abv?.status).toBe("mismatch");
+    expect(report.overall).toBe("has_mismatches");
+  });
+
   it("flags a missing government warning", () => {
     const report = buildMatchReport(application, {
       ...cleanLabel,

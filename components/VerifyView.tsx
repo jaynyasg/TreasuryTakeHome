@@ -15,8 +15,11 @@ import { extractApplicationFromFiles, fetchColaPrefill, fileToDataUrl, verifyCas
 import {
   ACCEPTED_LABEL_FILE_TYPES,
   formatBytes,
+  inferSupportedLabelMime,
   isPdfDataUrl,
   isSupportedLabelFile,
+  MAX_FULL_APPLICATION_FILES,
+  MAX_FULL_APPLICATION_UPLOAD_BYTES,
   MAX_LABEL_FILES,
   MAX_LABEL_UPLOAD_BYTES,
 } from "@/lib/labelFiles";
@@ -45,11 +48,23 @@ const DEGRADED_SAMPLE_IMAGES = [
   "/samples/degraded-otium-back.jpg",
 ];
 
+const FULL_APPLICATION_CONCURRENCY = 4;
+
+type LabelFileKind = "image" | "pdf";
+
 interface LabelFile {
   id: string;
   name: string;
   dataUrl: string;
-  kind: "image" | "pdf";
+  kind: LabelFileKind;
+  size: number;
+}
+
+interface FullApplicationFile {
+  id: string;
+  name: string;
+  file: File;
+  kind: LabelFileKind;
   size: number;
 }
 
@@ -59,7 +74,7 @@ type FullPdfState =
   | { kind: "done"; application: ColaApplication; result: VerifyResponse }
   | { kind: "error"; message: string };
 
-interface FullPdfRow extends LabelFile {
+interface FullPdfRow extends FullApplicationFile {
   state: FullPdfState;
 }
 
@@ -82,6 +97,7 @@ export default function VerifyView() {
   const [colaSource, setColaSource] = useState<"live" | "cached" | null>(null);
   const manualFileInput = useRef<HTMLInputElement>(null);
   const fullPdfInput = useRef<HTMLInputElement>(null);
+  const fullCancelRef = useRef(false);
 
   const applicationReady =
     application.brandName.trim() !== "" &&
@@ -136,34 +152,42 @@ export default function VerifyView() {
     }
   };
 
-  const addFullPdfs = async (files: FileList | File[] | null) => {
+  const addFullPdfs = (files: FileList | File[] | null) => {
     if (!files) return;
     setFullError(null);
-    try {
-      const supported = Array.from(files).filter(isSupportedLabelFile);
-      if (supported.length === 0) {
-        setFullError("Add one or more complete COLA application PDFs or images.");
-        return;
-      }
-      const remainingSlots = MAX_LABEL_FILES - fullPdfRows.length;
-      if (remainingSlots <= 0) {
-        setFullError(`Remove an application file before adding another one. This prototype accepts up to ${MAX_LABEL_FILES}.`);
-        return;
-      }
-      const nextFiles = supported.slice(0, remainingSlots);
-      const oversized = nextFiles.find((file) => file.size > MAX_LABEL_UPLOAD_BYTES);
-      if (oversized) {
-        setFullError(`${oversized.name} is ${formatBytes(oversized.size)}. Use application files under ${formatBytes(MAX_LABEL_UPLOAD_BYTES)} each.`);
-        return;
-      }
-      const added = await Promise.all(nextFiles.map(readLabelFile));
-      setFullPdfRows((prev) =>
-        [...prev, ...added.map((file) => ({ ...file, state: { kind: "idle" as const } }))].slice(0, MAX_LABEL_FILES)
+    const supported = Array.from(files).filter(isSupportedLabelFile);
+    if (supported.length === 0) {
+      setFullError("Add one or more complete COLA application PDFs or images.");
+      return;
+    }
+    const remainingSlots = MAX_FULL_APPLICATION_FILES - fullPdfRows.length;
+    if (remainingSlots <= 0) {
+      setFullError(
+        `Remove an application file before adding another one. This runner accepts up to ${MAX_FULL_APPLICATION_FILES}.`
       );
-      setActiveFullId((prev) => prev ?? added[0]?.id ?? null);
-      setActiveResult("full");
-    } catch (err) {
-      setFullError(err instanceof Error ? err.message : "Could not read the application file.");
+      return;
+    }
+    const nextFiles = supported.slice(0, remainingSlots);
+    const oversized = nextFiles.find((file) => file.size > MAX_FULL_APPLICATION_UPLOAD_BYTES);
+    if (oversized) {
+      setFullError(
+        `${oversized.name} is ${formatBytes(oversized.size)}. Use application files under ${formatBytes(MAX_FULL_APPLICATION_UPLOAD_BYTES)} each.`
+      );
+      return;
+    }
+    const added = nextFiles.map(readFullApplicationFile);
+    setFullPdfRows((prev) =>
+      [...prev, ...added.map((file) => ({ ...file, state: { kind: "idle" as const } }))].slice(
+        0,
+        MAX_FULL_APPLICATION_FILES
+      )
+    );
+    setActiveFullId((prev) => prev ?? added[0]?.id ?? null);
+    setActiveResult("full");
+    if (supported.length > remainingSlots) {
+      setFullError(
+        `Added the first ${remainingSlots} file${remainingSlots === 1 ? "" : "s"}; this runner accepts up to ${MAX_FULL_APPLICATION_FILES}.`
+      );
     }
   };
 
@@ -183,6 +207,16 @@ export default function VerifyView() {
     return () => window.removeEventListener("paste", onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manualFiles.length]);
+
+  useEffect(() => {
+    if (!fullBusy) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [fullBusy]);
 
   const loadSample = async (imageUrls: string[]) => {
     setManualError(null);
@@ -235,25 +269,47 @@ export default function VerifyView() {
       setFullError("Add one or more complete COLA application files.");
       return;
     }
+    const rowsToVerify = fullPdfRows.slice();
+    let nextIndex = 0;
+    fullCancelRef.current = false;
     setFullBusy(true);
     setFullError(null);
     setActiveResult("full");
-    const rowsToVerify = fullPdfRows.slice();
-    for (const row of rowsToVerify) {
-      setRowState(row.id, { kind: "running" });
-      setActiveFullId(row.id);
-      try {
-        const extractedApplication = await extractApplicationFromFiles([row.dataUrl]);
-        const result = await verifyCase(extractedApplication, [row.dataUrl]);
-        setRowState(row.id, { kind: "done", application: extractedApplication, result });
-      } catch (err) {
-        setRowState(row.id, {
-          kind: "error",
-          message: err instanceof Error ? err.message : "Verification failed.",
-        });
+
+    const runNext = async () => {
+      while (nextIndex < rowsToVerify.length && !fullCancelRef.current) {
+        const row = rowsToVerify[nextIndex++];
+        setRowState(row.id, { kind: "running" });
+        setActiveFullId(row.id);
+        try {
+          const dataUrl = await fileToDataUrl(row.file);
+          const extractedApplication = await extractApplicationFromFiles([dataUrl]);
+          const result = await verifyCase(extractedApplication, [dataUrl]);
+          setRowState(row.id, { kind: "done", application: extractedApplication, result });
+        } catch (err) {
+          setRowState(row.id, {
+            kind: "error",
+            message: err instanceof Error ? err.message : "Verification failed.",
+          });
+        }
       }
+    };
+
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(FULL_APPLICATION_CONCURRENCY, rowsToVerify.length) }, () => runNext())
+      );
+      if (fullCancelRef.current) {
+        setFullError("Canceled. Completed applications were kept; unstarted files are still ready.");
+      }
+    } finally {
+      setFullBusy(false);
     }
-    setFullBusy(false);
+  };
+
+  const cancelFullVerification = () => {
+    fullCancelRef.current = true;
+    setFullError("Cancel requested. Active applications will finish; unstarted files will stay ready.");
   };
 
   const setRowState = (id: string, state: FullPdfState) => {
@@ -356,16 +412,21 @@ export default function VerifyView() {
         </Card>
 
         <Card>
-          <div className="mb-3">
-            <h2 className="text-[15px] font-semibold">Full COLA Applications</h2>
-            <p className="mt-0.5 text-[12px] text-muted">
-              Upload complete application PDFs or image scans here. Each file is read and verified as its own case.
-            </p>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[15px] font-semibold">Full COLA Applications</h2>
+              <p className="mt-0.5 text-[12px] text-muted">
+                Upload complete application PDFs or image scans here. Each file is read and verified as its own case.
+              </p>
+            </div>
+            <span className="text-[11px] text-muted">
+              {fullPdfRows.length}/{MAX_FULL_APPLICATION_FILES}
+            </span>
           </div>
           <FileUploadBox
             inputRef={fullPdfInput}
             accept={ACCEPTED_LABEL_FILE_TYPES}
-            label="Click or drop complete COLA application files"
+            label="Click or drop up to 300 complete COLA application files"
             onFiles={addFullPdfs}
           />
           {fullPdfRows.length > 0 && (
@@ -398,7 +459,7 @@ export default function VerifyView() {
               ))}
             </ul>
           )}
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <IconButton
               icon={<Sparkles />}
               loading={fullBusy}
@@ -406,13 +467,16 @@ export default function VerifyView() {
               onClick={() => void verifyFullPdfs()}
             >
               {fullBusy
-                ? "Verifying applications..."
+                ? `Verifying ${fullDone.length}/${fullPdfRows.length}...`
                 : fullPdfRows.length > 0
                   ? `Verify ${fullPdfRows.length} full application${fullPdfRows.length === 1 ? "" : "s"}`
                   : "Verify full applications"}
             </IconButton>
+            {fullBusy && <Chip onClick={cancelFullVerification}>Cancel after current</Chip>}
             {fullPdfRows.length === 0 && (
-              <p className="mt-2 text-[11.5px] text-muted">Use this for complete COLA application PDFs or image scans.</p>
+              <p className="basis-full text-[11.5px] text-muted">
+                Use this for complete COLA application PDFs or image scans.
+              </p>
             )}
           </div>
           {fullError && (
@@ -546,7 +610,7 @@ function FullPdfResults({
   );
 }
 
-function FileKindIcon({ kind }: { kind: LabelFile["kind"] }) {
+function FileKindIcon({ kind }: { kind: LabelFileKind }) {
   return kind === "pdf" ? <FilePdf size={18} /> : <ImageIcon size={18} />;
 }
 
@@ -647,10 +711,24 @@ function FileTiles({ files, onRemove }: { files: LabelFile[]; onRemove: (id: str
 async function readLabelFile(file: File): Promise<LabelFile> {
   const dataUrl = await fileToDataUrl(file);
   return {
-    id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+    id: fileId(file),
     name: file.name,
     dataUrl,
     kind: isPdfDataUrl(dataUrl) ? "pdf" : "image",
     size: file.size,
   };
+}
+
+function readFullApplicationFile(file: File): FullApplicationFile {
+  return {
+    id: fileId(file),
+    name: file.name,
+    file,
+    kind: inferSupportedLabelMime(file) === "application/pdf" ? "pdf" : "image",
+    size: file.size,
+  };
+}
+
+function fileId(file: File): string {
+  return `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`;
 }

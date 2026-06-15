@@ -1,5 +1,7 @@
 export const MAX_LABEL_FILES = 4;
+export const MAX_FULL_APPLICATION_FILES = 300;
 export const MAX_LABEL_UPLOAD_BYTES = 3 * 1024 * 1024;
+export const MAX_FULL_APPLICATION_UPLOAD_BYTES = MAX_LABEL_UPLOAD_BYTES;
 export const ACCEPTED_LABEL_FILE_TYPES = ".pdf,.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp,application/pdf";
 
 const MIME_BY_EXTENSION: Record<string, string> = {

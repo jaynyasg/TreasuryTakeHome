@@ -100,9 +100,18 @@ describe("government warning lead-in boldness (T6 / R7 + R11)", () => {
     expect(v.status).toBe("match");
   });
 
-  it("BACKWARD-COMPAT: explicit null boldnessConfidence is still match", () => {
+  it("routes to needs_review when boldness confidence is explicitly unknown", () => {
     const v = checkGovernmentWarning({ ...exact, boldnessConfidence: null });
-    expect(v.status).toBe("match");
+    expect(v.status).toBe("needs_review");
+    expect(v.reason.toLowerCase()).toContain("could not assess");
+    expect(v.reason.toLowerCase()).toContain("bold");
+  });
+
+  it("routes to needs_review when the lead-in cannot be visually located", () => {
+    const v = checkGovernmentWarning({ ...exact, leadInDetected: false, boldnessConfidence: 0.9 });
+    expect(v.status).toBe("needs_review");
+    expect(v.reason.toLowerCase()).toContain("lead-in");
+    expect(v.reason.toLowerCase()).toContain("visual");
   });
 
   it("does NOT route to needs_review when wording is wrong, even with low boldness", () => {

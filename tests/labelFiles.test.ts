@@ -6,6 +6,8 @@ import {
   inferSupportedLabelMime,
   isSupportedLabelDataUrl,
   isSupportedLabelFile,
+  MAX_FULL_APPLICATION_FILES,
+  MAX_FULL_APPLICATION_UPLOAD_BYTES,
   MAX_LABEL_UPLOAD_BYTES,
 } from "@/lib/labelFiles";
 
@@ -35,5 +37,10 @@ describe("label file helpers", () => {
   it("advertises PDF extensions and formats the upload limit", () => {
     expect(ACCEPTED_LABEL_FILE_TYPES).toContain(".pdf");
     expect(formatBytes(MAX_LABEL_UPLOAD_BYTES)).toBe("3.0 MB");
+  });
+
+  it("separates the single-case label cap from the public full-application batch cap", () => {
+    expect(MAX_FULL_APPLICATION_FILES).toBe(300);
+    expect(MAX_FULL_APPLICATION_UPLOAD_BYTES).toBe(MAX_LABEL_UPLOAD_BYTES);
   });
 });

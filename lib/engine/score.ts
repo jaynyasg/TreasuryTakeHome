@@ -10,6 +10,7 @@ import {
   compareNetContents,
   compareProducerAddress,
   compareText,
+  parseAlcoholContent,
 } from "./normalize";
 import { checkGovernmentWarning } from "./warning";
 
@@ -60,6 +61,27 @@ function notApplicable(field: FieldKey, why: string): FieldVerdict {
     labelValue: null,
     reason: why,
   };
+}
+
+function shouldRouteAlcoholOcrAmbiguityToReview(
+  app: ColaApplication,
+  label: ExtractedLabel
+): boolean {
+  if (app.beverageType !== "wine" || !app.wineAppellation || !app.wineVintage) return false;
+  if (!label.brandName || !label.classType || !label.wineAppellation || !label.wineVintage) return false;
+
+  const appAlcohol = parseAlcoholContent(app.alcoholContent ?? "");
+  const labelAlcohol = parseAlcoholContent(label.alcoholContent ?? "");
+  if (appAlcohol.percent === null || labelAlcohol.percent === null) return false;
+  if (Math.abs(appAlcohol.percent - labelAlcohol.percent) > 2.5) return false;
+
+  const matchingIdentity =
+    compareText(app.brandName, label.brandName).kind !== "different" &&
+    compareText(app.classType, label.classType).kind !== "different" &&
+    compareText(app.wineAppellation, label.wineAppellation).kind !== "different" &&
+    compareText(app.wineVintage, label.wineVintage).kind !== "different";
+
+  return matchingIdentity;
 }
 
 /**
@@ -136,6 +158,16 @@ export function buildMatchReport(
         ? absentVerdict("alcoholContent", app.alcoholContent, r, "the alcohol content")
         : (() => {
             const c = compareAlcoholContent(app.alcoholContent, label.alcoholContent);
+            if (!c.equivalent && shouldRouteAlcoholOcrAmbiguityToReview(app, label)) {
+              return {
+                field: "alcoholContent" as const,
+                status: "needs_review" as const,
+                applicationValue: app.alcoholContent,
+                labelValue: label.alcoholContent,
+                reason:
+                  `${c.reason} The rest of this wine identity (brand, class/type, appellation, and vintage) matches, so this small numeric difference may be an OCR read of degraded label text; route to an agent before rejecting.`,
+              };
+            }
             return {
               field: "alcoholContent" as const,
               status: c.equivalent

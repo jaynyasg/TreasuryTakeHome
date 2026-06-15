@@ -80,12 +80,27 @@ export function checkGovernmentWarning(
   }
 
   // Wording + capitalization are correct. Before declaring `match`, honor the
-  // hybrid typography signal: if the model SUPPLIED a boldness confidence and it
-  // is below the threshold, the lead-in may not actually be bold (27 CFR Part 16
-  // requires bold) — route to needs_review with evidence rather than a false
-  // pass. When the field is absent/null/undefined (all legacy extractions), this
-  // branch never fires and the verdict stays `match`, exactly as before.
+  // hybrid typography signal: if the model SUPPLIED boldness evidence and it is
+  // absent, unknown, or below threshold, the lead-in may not actually be bold
+  // (27 CFR Part 16 requires bold). Route to needs_review with evidence rather
+  // than a false pass. When the field is fully absent (legacy extractions), the
+  // verdict stays `match`, exactly as before.
   const conf = gw.boldnessConfidence;
+  const suppliedBoldnessConfidence = Object.prototype.hasOwnProperty.call(gw, "boldnessConfidence");
+  if (gw.leadInDetected === false) {
+    return {
+      ...base,
+      status: "needs_review",
+      reason: `Wording and capitalization are correct, but the model could not locate the "${GOVERNMENT_WARNING_HEADING}" lead-in as a visual segment to confirm it is bold - routed for human review.`,
+    };
+  }
+  if (suppliedBoldnessConfidence && typeof conf !== "number") {
+    return {
+      ...base,
+      status: "needs_review",
+      reason: `Wording and capitalization are correct, but the model could not assess whether the "${GOVERNMENT_WARNING_HEADING}" lead-in is bold - routed for human review.`,
+    };
+  }
   if (typeof conf === "number" && conf < WARNING_BOLDNESS_THRESHOLD) {
     return {
       ...base,

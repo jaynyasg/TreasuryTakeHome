@@ -28,9 +28,21 @@ const LIVE = process.argv.includes("--live");
 // --only <prefix>: limit live re-recording to matching case ids (cost control).
 const ONLY_IDX = process.argv.indexOf("--only");
 const ONLY = ONLY_IDX >= 0 ? process.argv[ONLY_IDX + 1] : null;
+const STATIC_SNAPSHOT_CASE_IDS = new Set([
+  // Synthetic/deterministic typography fixture: it deliberately records low
+  // boldness confidence for an otherwise-clean warning so the offline release
+  // gate always exercises the needs_review path. Live extraction of the same
+  // Santa Fe image can legitimately report high confidence, which would erase
+  // the test condition rather than prove product behavior.
+  "santa_fe_warning_uncertain_boldness",
+]);
 
 function selected(id: string): boolean {
   return !ONLY || id.startsWith(ONLY);
+}
+
+function shouldLiveRefresh(id: string): boolean {
+  return LIVE && selected(id) && !STATIC_SNAPSHOT_CASE_IDS.has(id);
 }
 
 interface Expectation {
@@ -304,7 +316,7 @@ async function main(): Promise<void> {
   for (const c of golden.cases) {
     const app = ColaApplication.parse(c.application);
     let extracted: ExtractedLabel | null;
-    if (LIVE && selected(c.id)) {
+    if (shouldLiveRefresh(c.id)) {
       extracted = await liveExtract(c.id, c.images.map(fileDataUrl));
     } else {
       extracted = loadSnapshot(c.id);

@@ -14,12 +14,14 @@ const EXTRACTION_PROMPT = `You are a TTB label compliance extraction system. Rea
 
 Rules:
 - Transcribe verbatim. Do NOT correct, complete, or normalize what the label says.
+- Never infer a value from the brand, product style, prior knowledge, or likely COLA data. Extract only characters you can actually see on the label image.
 - For PDFs, ignore COLA application/form/registry pages and extract only from actual product label artwork or container label pages.
 - Use null for any field not visible on the label. NEVER use placeholder text like ".", "-", "N/A", or "none" — null only.
 - classType: the class/type designation — the product style or varietal, e.g. "Kentucky Straight Bourbon Whiskey", "Pinot Gris", "India Pale Ale". A grape varietal on a wine label IS the class/type.
 - fancifulName: a distinctive coined product name that is neither the brand nor the class/type (e.g. "RESERVE FURNACE MOUNTAIN RED"). Most labels have none — null is the common answer.
 - alcoholContent: the alcohol statement as printed, e.g. "45% Alc./Vol. (90 Proof)" or "12% ALC/VOL".
 - netContents: as printed, e.g. "750 mL".
+- Numeric fields are high-risk. For alcoholContent and netContents, extract the value only when every digit and unit is plainly readable. If the number is blurred, cropped, vertical, edge-warped, tiny, or partly obscured, set that field to null and readability to "partial" instead of guessing.
 - governmentWarning.text: the COMPLETE warning statement verbatim, including its heading, preserving the exact capitalization printed on the label.
 - governmentWarning.headingStyle: "all_caps" only if the "GOVERNMENT WARNING:" lead-in is printed entirely in capital letters; "title_case" if written like "Government Warning:"; otherwise "other".
 - governmentWarning typography evidence (the lead-in must be BOLD per 27 CFR Part 16). Report these ONLY for the "GOVERNMENT WARNING:" lead-in words, and be honest about uncertainty — bold weight is hard to judge on imperfect images:

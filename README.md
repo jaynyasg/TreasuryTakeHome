@@ -23,10 +23,11 @@ generator for testing. Built per [PRD.md](PRD.md).
 Two flows, two tabs, one button each:
 
 - **Verify a label** — enter/prefill the application fields and attach the matching label
-  files, **or** upload up to 4 complete COLA application files in the full-form section
-  (each file verified as its own case). Match report in ~5 seconds: overall %, per-field
-  match / mismatch / missing / needs-review, and a plain-English reason for each. A
-  "Try a bad photo" chip demos honest needs-review on a perspective-skewed scan.
+  files, **or** upload up to 300 complete COLA application files in the full-form section
+  (each file verified as its own case, client-side concurrency 4, cancelable between active
+  cases). Match report in ~5 seconds per case: overall %, per-field match / mismatch /
+  missing / needs-review, and a plain-English reason for each. A "Try a bad photo" chip
+  demos honest needs-review on a perspective-skewed scan.
 - **Generate test cases** — seeded mock application+label pairs, clean or with injected
   defects (wrong ABV, missing warning, title-case "Government Warning:", swapped brand…),
   rendered to PDF and verified through the **same pipeline** as uploaded files. Batch at
@@ -72,7 +73,7 @@ once before submission so the degraded-image proof reflects current model behavi
 | R2 | Mock application + label generator | `lib/engine/generator.ts` — seeded, deterministic, defect-injecting, batch; `GeneratorView.tsx` |
 | R3 | ~5s verification | ~4.5s measured end-to-end; single LLM call (`lib/extract.ts`) + pure scoring; ≤5s p50 target codified in `lib/config/limits.ts` |
 | R4 | Simple, obvious UI | `app/page.tsx` — two tabs, one primary button each; calm house-style |
-| R5 | Batch upload | `GeneratorView.tsx` client batch runner (concurrency 4); production server-side path in §3 |
+| R5 | Batch upload | `VerifyView.tsx` accepts up to 300 full COLA application files (concurrency 4, cancelable); `GeneratorView.tsx` generates/verifies 3–300 cases; production durable path in §3 |
 | R6 | Fuzzy/judgment matching | `lib/engine/normalize.ts` — `STONE'S THROW` ≡ `Stone's Throw`, `750 MILLILITERS` ≡ `750 mL`, proof↔ABV, address boilerplate, with explanations |
 | R7 | Word-for-word warning, all-caps bold | `lib/engine/warning.ts` — exact text; "GOVERNMENT WARNING:" must be all caps (title case rejected); uncertain boldness → needs-review |
 | R8 | Standalone, no COLA integration | No COLA write-back; registry lookup falls back to a committed cached fixture |
@@ -149,9 +150,9 @@ npm run dev         # reviewers land on /reviewer/queue, admins on /admin
 > long-lived poll process and **Vercel has no place to run it**. A live durable demo additionally
 > requires **Vercel Blob** (`BLOB_READ_WRITE_TOKEN` + `STORAGE_PROVIDER=vercel-blob`) so the web
 > process and the separate worker share uploaded bytes, plus a host running `npm run worker`.
-> A Vercel-Cron "queue tick" route is the documented serverless option to run the worker on
-> Vercel alone — but that route is **not built yet**. `npm run seed:demo` is the zero-infra way
-> to tour the reviewer UI (it writes scored cases directly).
+> A Vercel-Cron "queue tick" route remains an optional serverless extension if the worker must
+> run on Vercel alone. `npm run seed:demo` is the zero-infra way to tour the reviewer UI (it
+> writes scored cases directly).
 
 See [`.env.local.example`](.env.local.example) for every variable, kill switches, and seed
 passwords. Provider preflight (Vercel Queues beta, Blob signed-access, Postgres pooling,
@@ -201,9 +202,11 @@ Per the brief's guidance to *document trade-offs or limitations*:
   added grape varietal(s). The app supports **both** — value-match when ABV/net are filled
   (2009-style), or verify label *presence* per 27 CFR when blank (how TTB checks today).
   Wine applications can declare varietals matched against label class/type.
-- **Demo-scale.** The core batch runner fans out **client-side** (concurrency 4, tested at
-  6–12); a tab close abandons the queue (a guard warns first). The durable layer is the
-  production answer to 200–300-at-once.
+- **Browser-bound core batch.** The public core accepts up to **300 complete COLA application
+  files** and fans out **client-side** (concurrency 4; files are read only when a worker starts
+  the case, not preloaded into state). A tab close abandons the queue (a guard warns first).
+  The durable layer is the production answer when batches must be resumable, assigned, audited,
+  exported, or handed off to another reviewer.
 - **Durable layer is wired end-to-end; a live cross-process demo needs Blob + a worker host.**
   The intake→worker handoff is now **wired**: `startBatch` records each `case_files.object_key`
   as `intake/{sessionId}/{fileName}` (byte-identical to the upload route), and the worker

@@ -1,17 +1,26 @@
 {
   "brandName": "RED GATE WINERY",
-  "fancifulName": ": null",
+  "fancifulName": null,
   "classType": "Table Red Wine",
   "alcoholContent": "11.5% ALC./VOL.",
   "netContents": "750 mL",
   "producerNameAddress": "RED GATE WINERY, AUSTIN, TX",
-  "countryOfOrigin": ": null",
-  "wineAppellation": ": null",
+  "countryOfOrigin": null,
+  "wineAppellation": null,
   "wineVintage": "2020",
   "governmentWarning": {
     "present": true,
     "text": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-    "headingStyle": "all_caps"
+    "headingStyle": "all_caps",
+    "boldnessConfidence": 0.9,
+    "boldnessUncertaintyReason": "",
+    "leadInDetected": true,
+    "region": {
+      "x": 0.05,
+      "y": 0.75,
+      "width": 0.9,
+      "height": 0.15
+    }
   },
   "readability": "clear"
 }

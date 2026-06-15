@@ -1,7 +1,7 @@
 {
   "brandName": "BLUE HERON ALES",
-  "fancifulName": "Hefeweizen",
-  "classType": null,
+  "fancifulName": null,
+  "classType": "HEFEWEIZEN",
   "alcoholContent": "5.6% ALC./VOL.",
   "netContents": "375 mL",
   "producerNameAddress": "IRON ANCHOR BREWING, SANTA FE, NM",
@@ -11,7 +11,16 @@
   "governmentWarning": {
     "present": true,
     "text": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-    "headingStyle": "all_caps"
+    "headingStyle": "all_caps",
+    "boldnessConfidence": 0.9,
+    "boldnessUncertaintyReason": ".",
+    "leadInDetected": true,
+    "region": {
+      "x": 0.05,
+      "y": 0.75,
+      "width": 0.9,
+      "height": 0.15
+    }
   },
   "readability": "clear"
 }

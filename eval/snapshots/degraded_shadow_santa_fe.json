@@ -11,7 +11,16 @@
   "governmentWarning": {
     "present": true,
     "text": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-    "headingStyle": "all_caps"
+    "headingStyle": "all_caps",
+    "boldnessConfidence": 0.9,
+    "boldnessUncertaintyReason": ":",
+    "leadInDetected": true,
+    "region": {
+      "x": 0.7,
+      "y": 0.1,
+      "width": 0.25,
+      "height": 0.8
+    }
   },
   "readability": "clear"
 }

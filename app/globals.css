@@ -10,8 +10,8 @@
     -moz-osx-font-smoothing: grayscale;
   }
   body {
-    font-family: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
-    letter-spacing: -0.011em;
+    font-family: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 0;
     /* Vintage flag backdrop under a cream wash — content cards stay opaque
        warm white on top, so readability never depends on the photo. */
     background:

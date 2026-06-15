@@ -3,7 +3,7 @@
   "fancifulName": null,
   "classType": "Straight Malt Whiskey",
   "alcoholContent": "46% ALCOHOL BY VOLUME",
-  "netContents": "750mL",
+  "netContents": "750 mL",
   "producerNameAddress": "DISTILLED AND BOTTLED BY SANTA FE DISTILLERY SANTA FE, NM, USA",
   "countryOfOrigin": null,
   "wineAppellation": null,
@@ -12,10 +12,15 @@
     "present": true,
     "text": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
     "headingStyle": "all_caps",
-    "leadInDetected": true,
     "boldnessConfidence": 0.3,
-    "boldnessUncertaintyReason": "glare on the lead-in makes the font weight hard to judge",
-    "region": { "x": 0.08, "y": 0.72, "width": 0.84, "height": 0.18 }
+    "boldnessUncertaintyReason": "fixture marks lead-in weight as uncertain",
+    "leadInDetected": true,
+    "region": {
+      "x": 0.75,
+      "y": 0.2,
+      "width": 0.2,
+      "height": 0.6
+    }
   },
   "readability": "clear"
 }

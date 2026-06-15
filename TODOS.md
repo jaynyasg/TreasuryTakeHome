@@ -1,5 +1,12 @@
 # TODOS
 
+## DONE — Public 300-file full-application runner (implemented 2026-06-15)
+- **What:** The deployed core verifier now accepts up to 300 complete COLA application PDFs or
+  image scans in the Full COLA Applications section. It keeps browser memory bounded by storing
+  file handles in state and reading each file only when a four-wide client worker starts that
+  case; canceling stops new dispatches while preserving completed results.
+- **Source:** /design-review gap closure for the deployed take-home.
+
 ## DONE — Durable server-side batch (was P3, implemented 2026-06-13)
 - **What:** The durable server-side batch path from the locked `docs/designs/production-gap-closure.md`
   plan is now implemented behind the `DURABLE_BATCH` feature flag: Postgres persistence
