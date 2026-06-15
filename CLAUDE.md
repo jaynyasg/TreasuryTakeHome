@@ -16,8 +16,12 @@ verdicts with reasons) + generate mock application/label pairs. Full brief: `PRD
   client. Validate external/LLM payloads at the seam — parse-or-fallback, never trust shape.
 - Matching engine (`lib/engine/`) is pure functions, fully unit-tested, no I/O.
 - LLM calls live only in API routes (`app/api/*`); the engine never imports the OpenAI SDK.
-- Demo-scale batch (~10–30 at once); 300-at-once is a documented scale-path, not built.
-- No COLA integration, no PII storage, nothing persisted server-side.
+- Two tiers. The always-on CORE persists nothing server-side and batches client-side (no DB,
+  no auth, needs only `OPENAI_API_KEY`); it is the graded default. The additive durable layer
+  (behind `DURABLE_BATCH`) DOES persist to Postgres/Blob and processes batches via the
+  off-Vercel worker — production-shaped, flag-gated, off in the graded deploy.
+- No COLA integration. The core stores nothing; the durable layer (flag-on only) persists
+  domain aggregates + audit events to Postgres and uploaded bytes to Blob.
 
 ## Workflow
 - All work on `main`. Remotes: `origin` (GitLab labs) and `github`.

@@ -6,6 +6,7 @@ percentage and a written reason for every verdict — plus a mock application + 
 generator for testing. Built per [PRD.md](PRD.md).
 
 **Live demo:** https://treasury-takehome-tau.vercel.app
+&nbsp;·&nbsp; **Architecture:** [`ARCHITECTURE.md`](ARCHITECTURE.md) (the as-built, two-tier system)
 
 ![Demo: verify a real COLA label (100% match), an honestly-flagged bad photo, and a mixed batch with real + generated labels](docs/demo.gif)
 
@@ -137,9 +138,20 @@ DATABASE_URL=postgres://...        # pooled endpoint for Vercel functions
 DURABLE_BATCH=1
 
 npm run seed        # apply migrations + seed reviewer@ttb.gov / admin@ttb.gov
+npm run seed:demo   # (optional) seed a reviewer-visible demo batch of scored cases so you can
+                    #   tour Work Queue → Case Detail → disposition → export WITHOUT the worker
+                    #   or OpenAI. Run `npm run seed` first. Needs DATABASE_URL.
 npm run worker      # poll-mode worker + /healthz (separate process)
 npm run dev         # reviewers land on /reviewer/queue, admins on /admin
 ```
+
+> **Demoing the durable layer live (cross-process) needs more than Vercel.** The worker is a
+> long-lived poll process and **Vercel has no place to run it**. A live durable demo additionally
+> requires **Vercel Blob** (`BLOB_READ_WRITE_TOKEN` + `STORAGE_PROVIDER=vercel-blob`) so the web
+> process and the separate worker share uploaded bytes, plus a host running `npm run worker`.
+> A Vercel-Cron "queue tick" route is the documented serverless option to run the worker on
+> Vercel alone — but that route is **not built yet**. `npm run seed:demo` is the zero-infra way
+> to tour the reviewer UI (it writes scored cases directly).
 
 See [`.env.local.example`](.env.local.example) for every variable, kill switches, and seed
 passwords. Provider preflight (Vercel Queues beta, Blob signed-access, Postgres pooling,
@@ -192,10 +204,18 @@ Per the brief's guidance to *document trade-offs or limitations*:
 - **Demo-scale.** The core batch runner fans out **client-side** (concurrency 4, tested at
   6–12); a tab close abandons the queue (a guard warns first). The durable layer is the
   production answer to 200–300-at-once.
-- **Durable layer needs provisioned infra to demo live.** Running §3 against real durable
-  processing requires a provisioned Postgres + a running worker; the **offline durable-path
-  smoke** (`tests/smoke/durablePath.test.ts`: PGlite + memory queue + fake storage + stub
-  model) proves the whole line connects deterministically in the gate.
+- **Durable layer is wired end-to-end; a live cross-process demo needs Blob + a worker host.**
+  The intake→worker handoff is now **wired**: `startBatch` records each `case_files.object_key`
+  as `intake/{sessionId}/{fileName}` (byte-identical to the upload route), and the worker
+  extracts the application PDF **on demand** (`extractApplication`) when application fields are
+  absent — so real uploads now **score** (they previously finalized `failed`). The **offline
+  durable-path smoke** (`tests/smoke/durablePath.test.ts`: PGlite + memory queue + fake storage
+  + stub model) drives `startBatch → worker → clean_match → disposition → export` deterministically
+  in the gate. The remaining requirement for a **live** cross-process demo is shared **Vercel
+  Blob** (the web and worker must read the same uploaded bytes) + a **worker host** running
+  `npm run worker`; Vercel cannot run the poll worker, and the Vercel-Cron "queue tick" route is
+  the serverless option but is **not yet built**. Real Postgres was validated against Neon
+  (17 tables, migrations 0001–0004, seeded users).
 - **E2E browser harness deferred.** The repo has Vitest + `puppeteer-core`, not Playwright;
   the live browser E2E suite (reviewer login, resumable intake, 300-case stubbed processing,
   disposition+export, admin replay) is specified but deferred to the rollout stage so it
@@ -215,8 +235,14 @@ Per the brief's guidance to *document trade-offs or limitations*:
 
 ## Deployment
 
-Production: https://treasury-takehome-tau.vercel.app (Vercel; `OPENAI_API_KEY` in project
-env). Redeploy with `vercel deploy --prod`.
+Production: https://treasury-takehome-tau.vercel.app (Vercel). Deploys via the **Vercel GitHub
+integration — pushing to `main` on the GitHub remote auto-redeploys**; `vercel --prod` is an
+alternative manual trigger. The **only required production env for the graded core is
+`OPENAI_API_KEY`** (no DB/worker/Blob). The graded posture is **`DURABLE_BATCH` unset/off**, so
+the reviewer/admin routes are hidden (`/login` 200, `/` 200, `/api/verify` 405 for GET,
+`/reviewer/queue` 404). Standing up the durable layer additionally needs `DATABASE_URL`,
+`AUTH_SECRET`, Vercel Blob (`BLOB_READ_WRITE_TOKEN` + `STORAGE_PROVIDER=vercel-blob`), and an
+off-Vercel worker host — see [`ARCHITECTURE.md`](ARCHITECTURE.md) §7.
 
 ## Repo map
 
@@ -230,10 +256,11 @@ lib/core/           worker-safe core: contract + engine + state machines
 lib/db/             driver-agnostic client, migrations, repositories, service-commands, seed
 lib/adapters/       storage / queue / model provider seams (+ shared contract tests)
 lib/{auth,flags,observability,config}/  auth/authz · feature flags+kill switches · trace/log · limits
-worker/             off-Vercel poll-mode worker (Dockerfile, health, loop, processCase)
+worker/             off-Vercel poll-mode worker (Dockerfile, health, loop, processCase, application)
 eval/               golden cases, label images, recorded extraction snapshots
-scripts/            prove.ts, eval.ts, seed.ts, smoke-api.ts, demo-gif
-tests/              vitest unit + offline integration/smoke suites
+scripts/            eval.ts, seed.ts, seed-demo.ts, prove.ts, smoke-api.ts, demo-gif.mjs, make_gif.py, make_degraded.py
+tests/              vitest unit + offline integration/smoke suites (incl. tests/smoke/durablePath.test.ts)
+ARCHITECTURE.md     the as-built, two-tier architecture (core + durable layer)
 DESIGN.md           operational design system (reviewer/admin)
 docs/designs/       locked production plan + preflight + observability + migration roadmap
 PRD.md              full take-home brief + derived requirements R1–R11
