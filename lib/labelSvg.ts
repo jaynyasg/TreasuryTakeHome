@@ -222,36 +222,6 @@ function addHorizontalWarning(
   }
 }
 
-function addRotatedWarning(
-  parts: string[],
-  gw: ExtractedLabel["governmentWarning"],
-  x: number,
-  y: number,
-  chars: number,
-  fill: string
-): void {
-  const warning = splitWarning(gw);
-  if (!warning) return;
-
-  const bodyLines = wrap(warning.body, chars);
-  let lineY = 0;
-  parts.push(`<g transform="translate(${x} ${y}) rotate(-90)">`);
-  if (warning.heading) {
-    const first = bodyLines.shift() ?? "";
-    parts.push(
-      `<text x="0" y="${lineY}" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="${fill}"><tspan font-weight="700">${esc(warning.heading)}</tspan>${first ? ` ${esc(first)}` : ""}</text>`
-    );
-    lineY += 12;
-  }
-  for (const line of bodyLines.slice(0, 5)) {
-    parts.push(
-      `<text x="0" y="${lineY}" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="${fill}">${esc(line)}</text>`
-    );
-    lineY += 12;
-  }
-  parts.push("</g>");
-}
-
 function complianceFooter(parts: string[], label: ExtractedLabel, p: Palette, fill = p.ink): void {
   if (label.alcoholContent) {
     parts.push(
@@ -367,22 +337,21 @@ function renderWineEstate(label: ExtractedLabel, p: Palette, seed: number): stri
 
 function renderSpiritsPoster(label: ExtractedLabel, p: Palette, seed: number): string {
   const parts: string[] = [];
-  const railX = 384;
   const labelBrand = label.brandName ? wrap(label.brandName.toUpperCase(), 16) : [];
+  const centerX = W / 2;
 
   parts.push(
     `<rect width="${W}" height="${H}" fill="${p.paper}"/>`,
-    `<rect x="20" y="22" width="${railX - 38}" height="${H - 44}" rx="8" fill="${p.panel}" stroke="${p.border}" stroke-width="2"/>`,
-    `<rect x="${railX}" y="22" width="76" height="${H - 44}" fill="#fffdf8" stroke="${p.border}" stroke-width="2"/>`,
-    `<path d="M48 74 L350 42 L344 184 L42 216 Z" fill="${p.accentSoft}" opacity="0.45"/>`,
-    `<path d="M58 420 C118 386 286 386 346 420 L346 526 L58 526 Z" fill="${p.accentDark}" opacity="0.12"/>`,
-    `<line x1="54" y1="560" x2="350" y2="560" stroke="${p.accent}" stroke-width="4"/>`
+    `<rect x="20" y="22" width="${W - 40}" height="${H - 44}" rx="8" fill="${p.panel}" stroke="${p.border}" stroke-width="2"/>`,
+    `<path d="M64 74 L416 42 L406 184 L54 216 Z" fill="${p.accentSoft}" opacity="0.45"/>`,
+    `<path d="M82 416 C150 388 330 388 398 416 L398 518 L82 518 Z" fill="${p.accentDark}" opacity="0.12"/>`,
+    `<line x1="74" y1="532" x2="${W - 74}" y2="532" stroke="${p.accent}" stroke-width="4"/>`
   );
 
   let y = 116;
   if (labelBrand.length > 0) {
     y = addCenteredLines(parts, labelBrand, {
-      x: 202,
+      x: centerX,
       y,
       baseSize: 34,
       maxChars: 16,
@@ -395,14 +364,14 @@ function renderSpiritsPoster(label: ExtractedLabel, p: Palette, seed: number): s
   }
 
   parts.push(
-    `<text x="202" y="${y + 8}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="${p.muted}" letter-spacing="2.4">DISTILLED AND BOTTLED</text>`,
-    `<line x1="92" y1="${y + 28}" x2="312" y2="${y + 28}" stroke="${p.accent}" stroke-width="1.5"/>`
+    `<text x="${centerX}" y="${y + 8}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="${p.muted}" letter-spacing="2.4">DISTILLED AND BOTTLED</text>`,
+    `<line x1="120" y1="${y + 28}" x2="${W - 120}" y2="${y + 28}" stroke="${p.accent}" stroke-width="1.5"/>`
   );
   y += 74;
 
   if (label.fancifulName) {
     y = addCenteredLines(parts, wrap(label.fancifulName.toUpperCase(), 18), {
-      x: 202,
+      x: centerX,
       y,
       baseSize: 22,
       maxChars: 18,
@@ -417,7 +386,7 @@ function renderSpiritsPoster(label: ExtractedLabel, p: Palette, seed: number): s
 
   if (label.classType) {
     y = addCenteredLines(parts, wrap(label.classType.toUpperCase(), 12), {
-      x: 202,
+      x: centerX,
       y: y - 4,
       baseSize: 28,
       maxChars: 12,
@@ -432,20 +401,27 @@ function renderSpiritsPoster(label: ExtractedLabel, p: Palette, seed: number): s
   const location = producerLocation(label.producerNameAddress);
   if (location) {
     parts.push(
-      `<text x="202" y="${Math.max(y + 22, 380)}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" fill="${p.muted}" letter-spacing="1.6">${esc(location.toUpperCase())}</text>`
+      `<text x="${centerX}" y="${Math.max(y + 22, 380)}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" fill="${p.muted}" letter-spacing="1.6">${esc(location.toUpperCase())}</text>`
     );
   }
-  addProducer(parts, label, 202, 438, 35, p.ink);
+  addProducer(parts, label, centerX, 438, 38, p.ink);
 
   if (label.alcoholContent || label.netContents) {
     const alcohol = label.alcoholContent ?? "";
     const net = label.netContents ?? "";
     parts.push(
-      `<text x="202" y="526" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="${p.ink}" letter-spacing="0.8">${esc([net, alcohol].filter(Boolean).join("  |  "))}</text>`
+      `<text x="${centerX}" y="516" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="${p.ink}" letter-spacing="0.8">${esc([net, alcohol].filter(Boolean).join("  |  "))}</text>`
     );
   }
 
-  addRotatedWarning(parts, label.governmentWarning, railX + 7, H - 52, 54, "#111");
+  addHorizontalWarning(parts, label.governmentWarning, {
+    x: 52,
+    y: 560,
+    width: W - 104,
+    chars: 54,
+    boxFill: "#fffdf8",
+    boxStroke: p.accentSoft,
+  });
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-template="spirits-poster" data-seed="${seed}">${parts.join("")}</svg>`;
 }
@@ -462,8 +438,8 @@ function renderBreweryBadge(label: ExtractedLabel, p: Palette, seed: number): st
     `<path d="M46 592 H434" stroke="${p.accent}" stroke-width="5"/>`,
     `<circle cx="240" cy="324" r="142" fill="${p.panel}" stroke="${p.accent}" stroke-width="8"/>`,
     `<circle cx="240" cy="324" r="116" fill="none" stroke="${p.border}" stroke-width="2" stroke-dasharray="8 7"/>`,
-    `<path d="M146 334 C174 286 203 286 240 324 C276 286 306 286 334 334 C308 358 274 366 240 348 C206 366 172 358 146 334 Z" fill="${p.accentSoft}" opacity="0.85"/>`,
-    `<path d="M240 211 V438" stroke="${p.accentDark}" stroke-width="2" opacity="0.45"/>`
+    `<rect x="94" y="260" width="292" height="116" rx="12" fill="${p.panel}" opacity="0.94"/>`,
+    `<line x1="132" y1="376" x2="348" y2="376" stroke="${p.accentSoft}" stroke-width="2" opacity="0.75"/>`
   );
 
   let y = 86;

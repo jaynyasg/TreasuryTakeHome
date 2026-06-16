@@ -48,7 +48,7 @@ const DEGRADED_SAMPLE_IMAGES = [
   "/samples/degraded-otium-back.jpg",
 ];
 
-const FULL_APPLICATION_CONCURRENCY = 4;
+const FULL_APPLICATION_CONCURRENCY = 1;
 
 type LabelFileKind = "image" | "pdf";
 

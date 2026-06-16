@@ -37,7 +37,7 @@ interface CaseRow {
   state: RowState;
 }
 
-const CONCURRENCY = 6;
+const CONCURRENCY = 1;
 /** Fallback before any measured data exists (plan AC-3 / D8.3). */
 const FALLBACK_COST_PER_CASE = 0.011;
 const FALLBACK_MS_PER_CASE = 6500;
@@ -367,7 +367,7 @@ export default function GeneratorView() {
               300 verifications cost about <span className="font-semibold">${(300 * costPerCase).toFixed(2)}</span> in
               model usage and take roughly{" "}
               <span className="font-semibold">{Math.ceil((300 * msPerCase) / CONCURRENCY / 60000)} minutes</span>{" "}
-              at {CONCURRENCY} concurrent requests
+              at {CONCURRENCY} concurrent request
               {isMeasured ? " (based on this session's measured usage)" : " (estimate — no measured runs yet)"}.
               Cancelling stops new requests; in-flight ones complete and are billed.
             </p>

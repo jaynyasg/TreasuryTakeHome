@@ -34,4 +34,26 @@ describe("label SVG renderer", () => {
     expect(svg).toContain("&lt;PRIVATE&gt;");
     expect(svg).not.toContain("FOUNDRY & OAK <PRIVATE>");
   });
+
+  it("keeps the brewery class/type band unobstructed for failed live-batch seeds", () => {
+    for (const seed of [37, 52]) {
+      const c = generateCase(seed, { defects: 0 });
+      const svg = renderLabelSvg(c, seed);
+
+      expect(svg).toContain('data-template="brewery-badge"');
+      expect(svg).toContain(">HEFEWEIZEN<");
+      expect(svg).not.toContain("M240 211 V438");
+      expect(svg).not.toContain("M146 334 C174 286");
+    }
+  });
+
+  it("renders spirits warning defects horizontally instead of in a rotated rail", () => {
+    const c = generateCase(42, { defects: 2 });
+    const svg = renderLabelSvg(c, 42);
+
+    expect(svg).toContain('data-template="spirits-poster"');
+    expect(svg).toContain("GOVERNMENT WARNING:");
+    expect(svg).toContain("Per the Surgeon General");
+    expect(svg).not.toContain("rotate(-90)");
+  });
 });
