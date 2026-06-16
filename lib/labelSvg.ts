@@ -436,17 +436,17 @@ function renderBreweryBadge(label: ExtractedLabel, p: Palette, seed: number): st
     `<path d="M18 506 H462 V566 H18 Z" fill="${p.accentSoft}" opacity="0.9"/>`,
     `<path d="M46 64 H434" stroke="${p.accent}" stroke-width="5"/>`,
     `<path d="M46 592 H434" stroke="${p.accent}" stroke-width="5"/>`,
-    `<circle cx="240" cy="324" r="142" fill="${p.panel}" stroke="${p.accent}" stroke-width="8"/>`,
-    `<circle cx="240" cy="324" r="116" fill="none" stroke="${p.border}" stroke-width="2" stroke-dasharray="8 7"/>`,
-    `<rect x="94" y="260" width="292" height="116" rx="12" fill="${p.panel}" opacity="0.94"/>`,
-    `<line x1="132" y1="376" x2="348" y2="376" stroke="${p.accentSoft}" stroke-width="2" opacity="0.75"/>`
+    `<rect x="74" y="238" width="332" height="174" rx="18" fill="${p.panel}" stroke="${p.accent}" stroke-width="7"/>`,
+    `<rect x="96" y="264" width="288" height="118" rx="10" fill="#fffdf5" opacity="0.92"/>`,
+    `<text x="240" y="292" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="${p.accentDark}" letter-spacing="2.4">CLASS / TYPE</text>`,
+    `<line x1="136" y1="306" x2="344" y2="306" stroke="${p.accentSoft}" stroke-width="2" opacity="0.9"/>`
   );
 
   let y = 86;
   if (label.brandName) {
-    y = addCenteredLines(parts, wrap(label.brandName.toUpperCase(), 18), {
+    y = addCenteredLines(parts, wrap(label.brandName.toUpperCase(), 22), {
       y,
-      baseSize: 30,
+      baseSize: 26,
       maxChars: 18,
       lineGap: 33,
       fill: p.ink,
@@ -470,15 +470,15 @@ function renderBreweryBadge(label: ExtractedLabel, p: Palette, seed: number): st
   }
 
   if (label.classType) {
-    addCenteredLines(parts, wrap(label.classType.toUpperCase(), 11), {
-      y: 292,
-      baseSize: 30,
-      maxChars: 11,
-      lineGap: 34,
+    addCenteredLines(parts, wrap(label.classType.toUpperCase(), 16), {
+      y: 348,
+      baseSize: 32,
+      maxChars: 16,
+      lineGap: 36,
       fill: p.border,
       weight: "700",
       letterSpacing: 1.2,
-      minSize: 17,
+      minSize: 19,
     });
   }
 

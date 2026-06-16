@@ -35,15 +35,17 @@ describe("label SVG renderer", () => {
     expect(svg).not.toContain("FOUNDRY & OAK <PRIVATE>");
   });
 
-  it("keeps the brewery class/type band unobstructed for failed live-batch seeds", () => {
-    for (const seed of [37, 52]) {
+  it("keeps the brewery class/type plate explicit and unobstructed for failed live-batch seeds", () => {
+    for (const seed of [34, 37, 49, 52, 85, 232, 259, 292, 301]) {
       const c = generateCase(seed, { defects: 0 });
       const svg = renderLabelSvg(c, seed);
 
       expect(svg).toContain('data-template="brewery-badge"');
-      expect(svg).toContain(">HEFEWEIZEN<");
+      expect(svg).toContain(">CLASS / TYPE<");
+      expect(svg).toContain(`>${c.label.classType!.toUpperCase()}<`);
       expect(svg).not.toContain("M240 211 V438");
       expect(svg).not.toContain("M146 334 C174 286");
+      expect(svg).not.toContain('stroke-dasharray="8 7"');
     }
   });
 
