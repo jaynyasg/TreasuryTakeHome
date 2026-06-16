@@ -1,270 +1,266 @@
-# TTB Label Verify — AI-Powered Alcohol Label Verification
+# TTB Label Verify
 
-Prototype for the TTB Compliance Division: checks what's printed on an alcohol beverage
-label against its COLA application (TTB Form 5100.31) — every field, with a match
-percentage and a written reason for every verdict — plus a mock application + label
-generator for testing. Built per [PRD.md](PRD.md).
+AI-powered alcohol label verification for the TTB COLA take-home.
 
-**Live demo:** https://treasury-takehome-tau.vercel.app
-&nbsp;·&nbsp; **Architecture:** [`ARCHITECTURE.md`](ARCHITECTURE.md) (the as-built, two-tier system)
+**Live deployed app:** https://treasury-takehome-tau.vercel.app
 
-![Demo: verify a real COLA label (100% match), an honestly-flagged bad photo, and a mixed batch with real + generated labels](docs/demo.gif)
+This prototype checks what is printed on an alcohol beverage label against its COLA
+application and returns a match percentage, per-field verdicts, and a reason for every
+result. It also generates mock application + label pairs, including clean cases and
+intentional defects, so evaluators can test the verifier without bringing their own files.
 
-> The graded take-home is the **always-on core** (requirements R1–R11): no database, no
-> login, one `OPENAI_API_KEY`. That is the default experience and the deployed URL. A
-> separate **production durable-batch layer** (behind `DURABLE_BATCH=1`) implements the
-> locked production plan — it is additive and never regresses the core. Skip to it only if
-> you want the production depth.
+![Demo: verify a real COLA label, an honestly-flagged bad photo, and a mixed generated batch](docs/demo.gif)
 
----
+## Evaluate The Deployed App
 
-## 1. What it is + quick start (the core)
+The deployed Vercel app is the primary submission artifact.
 
-Two flows, two tabs, one button each:
+1. Open https://treasury-takehome-tau.vercel.app.
+2. On **Verify a label**, click **Load real example**.
+3. Click **Verify label**.
+4. Confirm the report shows an overall match percentage, per-field verdicts, and reasons.
+5. Try **Try a bad photo** to see imperfect-image handling route uncertainty to review.
+6. Switch to **Generate test cases** to create clean or defect-injected mock labels and verify them through the same pipeline.
 
-- **Verify a label** — enter/prefill the application fields and attach the matching label
-  files, **or** upload up to 300 complete COLA application files in the full-form section
-  (each file verified as its own case, client-side concurrency 4, cancelable between active
-  cases). Match report in ~5 seconds per case: overall %, per-field match / mismatch /
-  missing / needs-review, and a plain-English reason for each. A "Try a bad photo" chip
-  demos honest needs-review on a perspective-skewed scan.
-- **Generate test cases** — seeded mock application+label pairs, clean or with injected
-  defects (wrong ABV, missing warning, title-case "Government Warning:", swapped brand…),
-  rendered to PDF and verified through the **same pipeline** as uploaded files. Batch at
-  3–300 cases (300 confirm-gated with measured cost/wall-clock), optionally mixed with real
-  COLA label sets and degraded photos, with progress, cancellation, per-case download, and
-  an escaped CSV export carrying every verdict's reason.
+The deployed app runs the always-on core path: no login, no database, no server-side persistence, and no COLA system integration. It needs only `OPENAI_API_KEY` in Vercel.
+
+### Latest Deployed Verification
+
+On June 16, 2026, the deployed production app was checked with:
+
+| Check | Result |
+|---|---|
+| Public API smoke against production | Passed |
+| Full deployed live eval suite | Passed, `17/17` cases and `53/53` checks |
+| Full 300-case live deployed batch | Completed all `300/300` API responses |
+| Follow-up regression for generated beer class/type false positives | Passed, `7/7` formerly failing clean seeds |
+| Production alias | `treasury-takehome-tau.vercel.app` points to a Ready Vercel deployment |
+
+The 300-case live batch surfaced seven clean generated beer labels where GPT-4o read the class/type too loosely. The brewery label template was updated with an explicit `CLASS / TYPE` plate, and the seven formerly failing seeds now return `all_match` against the deployed `/api/verify` path.
+
+## What It Covers
+
+| Take-home need | Implementation |
+|---|---|
+| Application-to-label matching | `/api/verify` extracts label fields, validates shape, then scores against the application |
+| Match percentage, mismatches, reasons | `lib/engine/score.ts` produces per-field verdicts and plain-English explanations |
+| Mock application + label generator | `lib/engine/generator.ts` and `lib/labelSvg.ts` create seeded clean/defective cases |
+| Roughly 5-second feedback | Single model extraction call plus deterministic local scoring; deployed smoke was under 5s |
+| Simple UI | One public page with two main flows: verify a label, generate test cases |
+| Batch support | Public app supports generated batches and full COLA application-file batches up to 300 cases |
+| Fuzzy judgment matching | Normalizers handle case, punctuation, ABV/proof, net contents, and address boilerplate |
+| Exact government warning check | `GOVERNMENT WARNING:` lead-in and required wording are checked exactly; uncertain typography goes to review |
+| No COLA integration | Registry lookup is demo-only/fallback; the app does not write to or depend on COLA |
+| No sensitive storage in graded path | The deployed core stores nothing server-side |
+| Imperfect images | Degraded eval cases cover blur, glare, rotation, perspective, shadow, and phone photos |
+
+The full source brief is preserved in [PRD.md](PRD.md), including the derived requirements from `TakeHome.docx`.
+
+## Architecture At A Glance
+
+The submitted deployment uses the same two-tier boundary described in
+[ARCHITECTURE.md](ARCHITECTURE.md). Tier A is the deployed, graded app. Tier B is an additive
+production-shaped layer in the repo, but it is behind `DURABLE_BATCH=1` and is off for the
+public take-home URL.
+
+```mermaid
+flowchart TB
+  subgraph TierA["Tier A - Always-On Core (deployed + graded)"]
+    A1["Browser: Verify + Generate"] --> A2["Vercel Next.js<br/>/, /api/verify, /api/extract-application, /api/cola"]
+    A2 --> A3["GPT-4o vision extraction"]
+    A5["Match report<br/>match percentage + per-field reasons"]
+    A6["Client-side batch fan-out<br/>nothing persists server-side"]
+  end
+
+  subgraph Shared["Shared Oracle"]
+    S1["zod contract gate<br/>lib/contract.ts"] --> S2["Pure matching engine<br/>lib/engine/*"]
+  end
+
+  subgraph TierB["Tier B - Durable Production Layer (optional, flag-gated)"]
+    B1["Reviewer/Admin UI"] --> B2["Intake + upload"]
+    B2 --> B3["Postgres + Blob"]
+    B3 --> B4["Queue"]
+    B4 --> B5["Off-Vercel worker"]
+    B6["Triage queue"] --> B7["Reviewer disposition"]
+    B7 --> B8["Export / retention"]
+  end
+
+  A3 --> S1
+  S2 --> A5
+  A2 --> A6
+
+  B5 --> S1
+  S2 --> B6
+
+  Flag["Production default<br/>DURABLE_BATCH unset"] -.-> B1
+```
+
+Load-bearing boundaries:
+
+- `lib/contract.ts` is the shared schema boundary for API, model, client, and worker payloads.
+- `lib/engine/` is the deterministic compliance oracle and never imports the OpenAI SDK.
+- `lib/extract.ts` and `lib/applicationExtract.ts` are the GPT-4o extraction seams.
+- `lib/labelSvg.ts` renders reproducible generated labels that are verified through the same deployed `/api/verify` path.
+- `DURABLE_BATCH` keeps the production-shaped reviewer/admin layer additive, so it cannot intercept or regress the public core.
+
+For the full deployment topology, worker flow, state machines, and durable-batch persistence model, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Setup And Run Locally
+
+Local setup is optional for evaluation because the deployed app is live. Use this if you want to run or modify the project.
+
+### Requirements
+
+- Node.js 22+ recommended
+- npm
+- An OpenAI API key with GPT-4o access
+
+### Install
 
 ```bash
 npm install
-echo OPENAI_API_KEY=sk-... > .env.local
-npm run dev          # http://localhost:3000
 ```
 
-Click **Load real example** on the Verify tab to prefill a real approved COLA
-(OTIUM CELLARS, TTB ID 10200001000187) with its actual label scans, then **Verify label**.
+### Configure
 
-**The core needs no database, no auth, and no other env var.** `OPENAI_API_KEY` is the only
-requirement.
-
-### The gate
+Create `.env.local`:
 
 ```bash
-npm run verify   # typecheck + lint + unit tests + offline eval (deterministic, fast, free)
+OPENAI_API_KEY=sk-...
 ```
 
-| Check | Command | What it proves |
-|---|---|---|
-| Unit tests | `npm test` | Warning rules, normalizers, scoring, generator, batch isolation, retry seam, COLA parser, CSV escaping, state machines, adapter contracts, fixture sync |
-| Offline eval | `npm run eval` | Golden cases (real COLAs + degraded photos + generated) replayed from recorded extractions — deterministic, free |
-| Live eval | `npm run eval:live` | Re-extracts with GPT-4o and re-grades (costs credits); `-- --only <prefix>` scopes spend |
-| Full gate | `npm run verify` | typecheck + lint + unit + offline eval |
+For Windows PowerShell:
 
-There is no CI; `npm run verify` (plus a Stop hook) is the gate. Run `npm run eval:live`
-once before submission so the degraded-image proof reflects current model behavior.
-
----
-
-## 2. Requirements coverage (R1–R11)
-
-| # | Requirement | Where it's satisfied |
-|---|---|---|
-| R1 | Match % + what doesn't match + why | `lib/engine/score.ts` per-field verdicts → match %; reasons on every field |
-| R2 | Mock application + label generator | `lib/engine/generator.ts` — seeded, deterministic, defect-injecting, batch; `GeneratorView.tsx` |
-| R3 | ~5s verification | ~4.5s measured end-to-end; single LLM call (`lib/extract.ts`) + pure scoring; ≤5s p50 target codified in `lib/config/limits.ts` |
-| R4 | Simple, obvious UI | `app/page.tsx` — two tabs, one primary button each; calm house-style |
-| R5 | Batch upload | `VerifyView.tsx` accepts up to 300 full COLA application files (concurrency 4, cancelable); `GeneratorView.tsx` generates/verifies 3–300 cases; production durable path in §3 |
-| R6 | Fuzzy/judgment matching | `lib/engine/normalize.ts` — `STONE'S THROW` ≡ `Stone's Throw`, `750 MILLILITERS` ≡ `750 mL`, proof↔ABV, address boilerplate, with explanations |
-| R7 | Word-for-word warning, all-caps bold | `lib/engine/warning.ts` — exact text; "GOVERNMENT WARNING:" must be all caps (title case rejected); uncertain boldness → needs-review |
-| R8 | Standalone, no COLA integration | No COLA write-back; registry lookup falls back to a committed cached fixture |
-| R9 | No sensitive storage | Core persists nothing server-side; entered/generated per session |
-| R10 | Network-mindful | One outbound (OpenAI) behind a single adapter seam; COLA lookup degrades gracefully when blocked. See migration roadmap §4–5 for the no-outbound path |
-| R11 | Imperfect images (stretch) | Proven by eval: degraded cases (blur/glare/rotation/perspective/shadow/phone-photo) must never be confidently wrong **and** still extract the core fields |
-
-### How the core works
-
-```
-label files ──> GPT-4o vision (structured output) ──> zod contract gate ─┐
-application ─────────────────────────────────────────────────────────────┴─> deterministic matching engine ──> report
+```powershell
+"OPENAI_API_KEY=sk-..." | Set-Content .env.local
 ```
 
-- **`lib/contract.ts`** — one typed zod contract at every seam (LLM output, API routes,
-  client). External payloads parse at the boundary; shape drift, refusals, and truncation
-  become clean errors, never undefined behavior.
-- **`lib/extract.ts`** — the only LLM call. GPT-4o reads the label verbatim (temperature 0,
-  JSON-schema-constrained, placeholder scrubbing).
-- **`lib/engine/`** — pure deterministic functions, fully unit-tested, no I/O:
-  `warning.ts` (word-for-word warning, all-caps lead-in), `normalize.ts` (judgment-tier
-  equivalences with explanations), `score.ts` (verdicts → %; unreadable regions →
-  needs-review, not mismatch), `generator.ts` (seeded mock generator, ground truth by
-  construction).
+The graded core needs no database, auth secret, blob storage, or worker.
 
----
-
-## 3. Production durable-batch layer (optional, `DURABLE_BATCH=1`)
-
-The locked production plan (`docs/designs/production-gap-closure.md`) expands the core into
-a durable, recoverable batch review system — **additive, behind a feature flag, never
-regressing the core**. With the flag off (default), `/`, the verifier, and the generator
-are the only active surface; the reviewer/admin area is gated and the durable tables sit
-dormant.
-
-### Architecture
-
-```
-Reviewer/Admin browser
-   │
-   ▼
-Next.js on Vercel  ── UI/API front door: Auth.js, Intake, Work Queue, Case Detail, Ops Console
-   ├──► Vercel Blob            (raw uploads · warning crops · export artifacts)
-   ├──► Postgres  ◄────────────(batches/cases/files · assignments/dispositions ·
-   │                            jobs/attempts · audit events · retention/exports — source of truth)
-   └──► Queue ──► off-Vercel Worker  (extraction · scoring · evidence · retry/dead-letter · export/purge)
-```
-
-- **Vercel** owns intake, assignment, reviewer disposition, and admin actions.
-- The **worker** (`worker/`, containerized, poll-mode, `GET /healthz`) owns processing
-  attempts, extraction, verdicts, warning evidence, retry/dead-letter, retention cleanup,
-  and exports. It reuses the **same `lib/engine` oracle** as `/api/verify` — scoring is
-  never re-implemented.
-- **Auth.js** (NextAuth v5) Credentials provider with scrypt hashes and Postgres-backed
-  reviewer/admin roles; route gating in `middleware.ts` only when the flag is on.
-
-### Run it locally
+### Run The App
 
 ```bash
-# in .env.local, in addition to OPENAI_API_KEY:
-AUTH_SECRET=$(openssl rand -base64 32)
-DATABASE_URL=postgres://...        # pooled endpoint for Vercel functions
+npm run dev
+```
+
+Then open http://localhost:3000.
+
+### Production Build
+
+```bash
+npm run build
+npm run start
+```
+
+### Verification Commands
+
+```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run eval
+npm run verify
+```
+
+`npm run verify` is the deterministic local gate: typecheck, lint, unit tests, and offline eval. `npm run eval:live` re-runs model extraction with GPT-4o and costs API credits, so it is on-demand only.
+
+To smoke-test a running deployment:
+
+```bash
+npx tsx scripts/smoke-api.ts https://treasury-takehome-tau.vercel.app
+```
+
+## Approach
+
+The app separates model extraction from deterministic compliance logic.
+
+```text
+label image(s) -> GPT-4o vision extraction -> zod contract gate
+application fields -------------------------> deterministic matching engine -> report
+```
+
+Key design choices:
+
+- **Typed contract at every boundary.** `lib/contract.ts` defines the shared zod schemas for LLM output, API payloads, and client data.
+- **Pure matching engine.** `lib/engine/` contains the normalization, warning, scoring, and generator logic without I/O or OpenAI imports.
+- **Model used for reading, not final authority.** GPT-4o extracts visible label text; deterministic code decides matches, mismatches, missing fields, and needs-review states.
+- **Honest uncertainty.** If a degraded image is unreadable or typography confidence is uncertain, the app routes to `needs_review` instead of pretending certainty.
+- **Seeded generator.** Generated cases are reproducible by seed, which made it possible to catch and fix live-batch false positives.
+- **Deployed-first core.** The public Vercel app is intentionally stateless and simple; optional durable-batch architecture is documented separately.
+
+## Tools Used
+
+- **Next.js 15 App Router** with TypeScript and React 19
+- **Tailwind CSS v3** with the local house-style preset
+- **OpenAI GPT-4o** for label-image and application extraction
+- **zod** for runtime schema validation
+- **Vitest** for unit, integration, and offline eval tests
+- **Vercel** for the deployed public app
+- **Postgres, PGlite, Vercel Blob, Auth.js, worker process** for the optional durable-batch layer behind `DURABLE_BATCH=1`
+
+## Assumptions And Trade-Offs
+
+- The submitted deployed app is a standalone prototype, not an integration with the real COLA system.
+- The graded path intentionally avoids server-side persistence, auth, database setup, and document retention because the brief asks for a prototype and says not to store sensitive data.
+- The app uses OpenAI GPT-4o over the public API, which is acceptable for the public prototype but would need an in-boundary approved model for a government production deployment.
+- Government-warning text is checked word-for-word in deterministic code. Bold/all-caps evidence comes from the vision extraction, so uncertain cases are routed to `needs_review`.
+- The public batch path is suitable for demonstration and evaluation. Production-grade resumable review, assignments, audit trails, exports, and retention are implemented/documented as an optional feature-flagged durable layer, but that layer requires extra infrastructure and an off-Vercel worker host.
+- The app favors false-review over false-approval. Ambiguous class/type or synonym cases are flagged rather than silently accepted.
+
+## Optional Durable Layer
+
+The repository includes an additive production-shaped durable-batch layer behind `DURABLE_BATCH=1`. It is not the default deployed experience.
+
+When enabled locally, it adds reviewer/admin routes, Postgres-backed auth, intake, queue state, worker processing, audit events, and exports.
+
+Required additional env vars:
+
+```bash
 DURABLE_BATCH=1
-
-npm run seed        # apply migrations + seed reviewer@ttb.gov / admin@ttb.gov
-npm run seed:demo   # (optional) seed a reviewer-visible demo batch of scored cases so you can
-                    #   tour Work Queue → Case Detail → disposition → export WITHOUT the worker
-                    #   or OpenAI. Run `npm run seed` first. Needs DATABASE_URL.
-npm run worker      # poll-mode worker + /healthz (separate process)
-npm run dev         # reviewers land on /reviewer/queue, admins on /admin
+AUTH_SECRET=...
+DATABASE_URL=postgres://...
+STORAGE_PROVIDER=vercel-blob
+BLOB_READ_WRITE_TOKEN=...
 ```
 
-> **Demoing the durable layer live (cross-process) needs more than Vercel.** The worker is a
-> long-lived poll process and **Vercel has no place to run it**. A live durable demo additionally
-> requires **Vercel Blob** (`BLOB_READ_WRITE_TOKEN` + `STORAGE_PROVIDER=vercel-blob`) so the web
-> process and the separate worker share uploaded bytes, plus a host running `npm run worker`.
-> A Vercel-Cron "queue tick" route remains an optional serverless extension if the worker must
-> run on Vercel alone. `npm run seed:demo` is the zero-infra way to tour the reviewer UI (it
-> writes scored cases directly).
+Useful commands:
 
-See [`.env.local.example`](.env.local.example) for every variable, kill switches, and seed
-passwords. Provider preflight (Vercel Queues beta, Blob signed-access, Postgres pooling,
-Auth.js) is documented in [`docs/designs/stage-1-preflight.md`](docs/designs/stage-1-preflight.md);
-operations (trace IDs, metrics, alerts, rollout, rollback, secret rotation) in
-[`docs/designs/observability-and-rollout.md`](docs/designs/observability-and-rollout.md);
-operational design system in [`DESIGN.md`](DESIGN.md).
+```bash
+npm run seed
+npm run seed:demo
+npm run worker
+npm run dev
+```
 
----
-
-## 4. Approach, tools, and decisions
-
-- **One typed contract at every seam.** `lib/contract.ts` (zod) gates LLM output, API
-  payloads, and worker jobs — parse-or-fallback, never trust shape.
-- **Deterministic engine, pure functions.** `lib/engine/` does all scoring/normalization/
-  warning logic with no I/O and no LLM SDK, so a model swap cannot silently change verdicts
-  and the whole engine is unit-testable and free to run.
-- **Driver-agnostic DB seam.** `lib/db/client.ts` exposes one `Queryable`/`DbClient`
-  interface; the same repository code runs against **PGlite** (in-process, offline tests)
-  and **`pg` Pool** (production) unchanged — repositories take a `Queryable`, service-command
-  modules own transactions so a state change + its audit event commit in one unit of work.
-- **Adapter seams for every provider.** Storage / queue / model
-  (`lib/adapters/*`) keep Vercel Blob / Vercel Queues / OpenAI SDK calls at the edge behind
-  shared contract tests, so each is a one-file swap for a government posture (see roadmap).
-- **Shared state machines.** Batch/case lifecycles are first-class typed state machines
-  (`lib/core/state/*`) enforced at API/worker mutation boundaries, with invalid-transition
-  tests; the SQL `CHECK` constraints mirror them exactly.
-- **Deterministic offline eval + on-demand live eval.** `npm run eval` replays recorded
-  extractions (free, in the gate); `npm run eval:live` re-extracts with GPT-4o for a reality
-  check (costs credits, on demand).
-- **scrypt/credentials auth, not an IdP.** R10: the TTB network blocks outbound traffic, so
-  a self-contained Credentials provider has zero outbound IdP dependency and is honest about
-  being a prototype; an SSO adapter seam is left for the government posture.
-
-**Stack:** Next.js 15 (App Router, TypeScript) on Vercel · Tailwind v3 + house-style preset ·
-OpenAI GPT-4o · Postgres (`pg`) / PGlite for tests · Vercel Blob · Auth.js (NextAuth v5) ·
-Vitest.
-
----
-
-## 5. Assumptions, trade-offs, and limitations
-
-Per the brief's guidance to *document trade-offs or limitations*:
-
-- **Form editions.** The provided COLA examples use the 2009-edition Form 5100.31 (states
-  alcohol content + net contents); the current 04/2023 revision dropped those boxes and
-  added grape varietal(s). The app supports **both** — value-match when ABV/net are filled
-  (2009-style), or verify label *presence* per 27 CFR when blank (how TTB checks today).
-  Wine applications can declare varietals matched against label class/type.
-- **Browser-bound core batch.** The public core accepts up to **300 complete COLA application
-  files** and fans out **client-side** (concurrency 4; files are read only when a worker starts
-  the case, not preloaded into state). A tab close abandons the queue (a guard warns first).
-  The durable layer is the production answer when batches must be resumable, assigned, audited,
-  exported, or handed off to another reviewer.
-- **Durable layer is wired end-to-end; a live cross-process demo needs Blob + a worker host.**
-  The intake→worker handoff is now **wired**: `startBatch` records each `case_files.object_key`
-  as `intake/{sessionId}/{fileName}` (byte-identical to the upload route), and the worker
-  extracts the application PDF **on demand** (`extractApplication`) when application fields are
-  absent — so real uploads now **score** (they previously finalized `failed`). The **offline
-  durable-path smoke** (`tests/smoke/durablePath.test.ts`: PGlite + memory queue + fake storage
-  + stub model) drives `startBatch → worker → clean_match → disposition → export` deterministically
-  in the gate. The remaining requirement for a **live** cross-process demo is shared **Vercel
-  Blob** (the web and worker must read the same uploaded bytes) + a **worker host** running
-  `npm run worker`; Vercel cannot run the poll worker, and the Vercel-Cron "queue tick" route is
-  the serverless option but is **not yet built**. Real Postgres was validated against Neon
-  (17 tables, migrations 0001–0004, seeded users).
-- **E2E browser harness deferred.** The repo has Vitest + `puppeteer-core`, not Playwright;
-  the live browser E2E suite (reviewer login, resumable intake, 300-case stubbed processing,
-  disposition+export, admin replay) is specified but deferred to the rollout stage so it
-  never enters the deterministic `verify` gate (`docs/designs/stage-1-preflight.md` §4). An
-  offline E2E-equivalent smoke is present.
-- **No real COLA integration** (R8) and **bold detection** is judged by the vision model
-  (`headingStyle`), not pixel-level font forensics.
-- **Class/type synonyms** ("Table Red Wine" vs "Dry Red Wine") are deliberately flagged for
-  review, not auto-equated — false approvals cost more than reviews.
-- **Prototype, not government-compliant.** This is a standalone proof-of-concept; it makes
-  **no claim** of current FedRAMP/government-production compliance. Every step to that
-  posture (identity, storage, in-boundary model, no-outbound network, SIEM, formal
-  retention) is a bounded swap at a named seam with a defined validation gate — see
-  [`docs/designs/government-migration-roadmap.md`](docs/designs/government-migration-roadmap.md).
-
----
+The durable layer needs shared blob storage and a long-running worker host for a real cross-process demo. Vercel alone hosts the public UI/API, but not the poll-mode worker. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full two-tier design.
 
 ## Deployment
 
-Production: https://treasury-takehome-tau.vercel.app (Vercel). Deploys via the **Vercel GitHub
-integration — pushing to `main` on the GitHub remote auto-redeploys**; `vercel --prod` is an
-alternative manual trigger. The **only required production env for the graded core is
-`OPENAI_API_KEY`** (no DB/worker/Blob). The graded posture is **`DURABLE_BATCH` unset/off**, so
-the reviewer/admin routes are hidden (`/login` 200, `/` 200, `/api/verify` 405 for GET,
-`/reviewer/queue` 404). Standing up the durable layer additionally needs `DATABASE_URL`,
-`AUTH_SECRET`, Vercel Blob (`BLOB_READ_WRITE_TOKEN` + `STORAGE_PROVIDER=vercel-blob`), and an
-off-Vercel worker host — see [`ARCHITECTURE.md`](ARCHITECTURE.md) §7.
+Production is hosted on Vercel:
 
-## Repo map
+https://treasury-takehome-tau.vercel.app
 
+Pushing `main` to the GitHub remote triggers the Vercel production deployment. The only required production environment variable for the submitted core is:
+
+```bash
+OPENAI_API_KEY=...
 ```
-app/                Next.js App Router — public core (page.tsx) + /api + (reviewer) area
-components/         UI; components/house = house-style primitives; queue/case/intake/admin/app-shell = workbench
-lib/contract.ts     zod boundary contract — the spine
-lib/engine/         pure matching engine (unit-tested)
-lib/extract.ts      GPT-4o vision seam (core)
-lib/core/           worker-safe core: contract + engine + state machines
-lib/db/             driver-agnostic client, migrations, repositories, service-commands, seed
-lib/adapters/       storage / queue / model provider seams (+ shared contract tests)
-lib/{auth,flags,observability,config}/  auth/authz · feature flags+kill switches · trace/log · limits
-worker/             off-Vercel poll-mode worker (Dockerfile, health, loop, processCase, application)
-eval/               golden cases, label images, recorded extraction snapshots
-scripts/            eval.ts, seed.ts, seed-demo.ts, prove.ts, smoke-api.ts, demo-gif.mjs, make_gif.py, make_degraded.py
-tests/              vitest unit + offline integration/smoke suites (incl. tests/smoke/durablePath.test.ts)
-ARCHITECTURE.md     the as-built, two-tier architecture (core + durable layer)
-DESIGN.md           operational design system (reviewer/admin)
-docs/designs/       locked production plan + preflight + observability + migration roadmap
-PRD.md              full take-home brief + derived requirements R1–R11
+
+Leave `DURABLE_BATCH` unset/off for the submitted deployed app.
+
+## Repo Map
+
+```text
+app/                Next.js routes and API handlers
+components/         Verify/generate UI and house-style components
+lib/contract.ts     Shared zod contract
+lib/engine/         Pure matching, warning, normalization, scoring, generator logic
+lib/extract.ts      GPT-4o label extraction seam
+lib/labelSvg.ts     Generated label artwork
+eval/               Golden cases, images, and recorded extraction snapshots
+scripts/            Eval, seed, smoke, proof, and demo helpers
+tests/              Vitest unit/integration/offline smoke tests
+worker/             Optional off-Vercel durable-batch worker
+ARCHITECTURE.md     As-built architecture and optional durable layer
+PRD.md              Take-home brief and derived requirements
 ```

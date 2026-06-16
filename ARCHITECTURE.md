@@ -6,6 +6,10 @@ aspiration. It reflects the deployed reality: the graded surface is the always-o
 is **off in production**.
 
 - Live: <https://treasury-takehome-tau.vercel.app> (Vercel; GitHub push-to-`main` auto-deploys).
+- Latest deployed proof (2026-06-16): production smoke passed; full deployed live eval passed
+  (`17/17` cases, `53/53` checks); full 300-case deployed batch completed `300/300` API
+  responses; targeted generated beer-label class/type regression passed `7/7` formerly failing
+  clean seeds after the `lib/labelSvg.ts` brewery template update.
 - Planning provenance: [`docs/designs/*`](docs/designs/) (see §8). Product brief: [`PRD.md`](PRD.md).
 - Operational design system (reviewer/admin UI): [`DESIGN.md`](DESIGN.md).
 
@@ -60,6 +64,7 @@ worker.
 | `lib/contract.ts` | The single typed zod contract at **every** seam: LLM output, API payloads, worker jobs, client. Parse-or-fallback — external/LLM shapes are validated at the boundary, never trusted. |
 | `lib/engine/` | Pure, I/O-free, fully unit-tested matching oracle: `warning.ts` (word-for-word GOVERNMENT WARNING, all-caps lead-in), `normalize.ts` (judgment-tier equivalences + explanations), `score.ts` (per-field verdicts → match %), `generator.ts` (seeded mock generator, ground truth by construction). Never imports the OpenAI SDK. |
 | `lib/extract.ts` / `lib/applicationExtract.ts` | The core LLM seams: extract an `ExtractedLabel` from a label image / a `ColaApplication` from an uploaded application PDF (GPT-4o, temperature 0, schema-constrained). Used only by API routes. |
+| `lib/labelSvg.ts` | Generated label artwork renderer used by the public generator and live batch proofs. The brewery template includes an explicit `CLASS / TYPE` plate so the vision model extracts beer style/class text reliably instead of inferring a broader category from decorative artwork. |
 | `lib/core/` | **Worker-safe boundary**: re-exports `lib/contract` + `lib/engine` plus the typed `state/` machines (`batch.ts`, `case.ts`, `transition.ts`). Anything the worker shares with the web lives behind this — no `next`/`react` imports cross it. |
 | `lib/db/` | Driver-agnostic persistence seam. `client.ts` = the `Queryable`/`DbClient` interface; `pglite.ts` (tests, in-process) and `pg.ts` (`pg` Pool, prod) both satisfy it. `migrate.ts` + `migrations/0001..0004`. `repositories/*` take a `Queryable` and never open transactions; `services/*` are service-commands that own `transaction()` so a state change + its audit event commit together. `seed.ts` seeds demo users. |
 | `lib/adapters/` | Provider seams kept at the edge behind shared `contractTest.ts` behavior contracts: `storage/` (`vercelBlob` ↔ `fake`), `queue/` (`postgresOutbox` ↔ `memory`), `model/` (`openai` ↔ `stub`). Each is a one-file swap; the fake/stub carry the contract offline. |
@@ -91,8 +96,9 @@ fields         │                        ▼
 ```
 
 One outbound call (OpenAI), pure scoring after. ~4.5s measured, ≤5s p50 codified in
-`lib/config/limits.ts`. The generator path renders seeded mock application+label pairs to PDF
-and runs them through this **same** pipeline. Batch fan-out is client-side in `GeneratorView`.
+`lib/config/limits.ts`. The generator path uses `lib/engine/generator.ts` for seeded ground
+truth and `lib/labelSvg.ts` for reproducible label artwork, then runs those rendered labels
+through this **same** pipeline. Batch fan-out is client-side in `GeneratorView`.
 
 ---
 
